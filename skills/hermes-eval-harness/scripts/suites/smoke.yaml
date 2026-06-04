@@ -1,0 +1,120 @@
+# Smoke suite — the fast equivalent of the "weather, ops, basic chat" QA pass,
+# CALIBRATED to the CT 133 Hermes build (verified 2026-06-04).
+#
+# Run in-process (fastest, gives tool-call + llm-call trajectory):
+#   python ../hermes_eval.py --suite smoke.yaml --backend library --workers 6
+#
+# CT 133 environment defaults (set these for your run):
+#   library backend (default): point AIAgent at the live provider. Main model is
+#     apex-fast:latest via provider:custom -> Ollama http://192.168.1.28:11434/v1.
+#       --model apex-fast:latest        (and the agent's base_url config)
+#   api backend (gateway serving path, see gateway.yaml):
+#       --base-url http://localhost:8643/v1
+#   cli backend (slow A/B baseline only):
+#       HERMES_HOME=/opt/hermes/home/.hermes   (TUI/CLI home)
+#
+# DISABLED TOOLSETS on this build (agent.disabled_toolsets): `terminal` AND
+# `code_execution` are GLOBALLY DISABLED. Do NOT assert tool_called: terminal —
+# it can never fire. Ops goes through the cluster-ops MCP instead (see routing.yaml).
+# `web_search` is likewise not the weather path here — weather is its own MCP.
+#
+# TOOL-NAME CALIBRATION (assumption flagged in CHANGELOG): MCP tools surface in the
+# trajectory under a prefixed name. We assert the underscore form the harness
+# trajectory most often emits (e.g. `mcp_weather_get_current_conditions`). If your
+# build emits the bare form (`get_current_conditions`) or a different prefix
+# (`cluster_ops_service_status` vs `mcp_cluster_ops_service_status`), print one
+# result["messages"] and adjust. Both forms are noted at each case.
+suite: smoke
+
+defaults:
+  max_iterations: 6      # cap tool loops — QA prompts shouldn't need many
+  timeout: 60
+
+cases:
+  # ---- basic chat: cheap, no tools, fast ----
+  - id: basic-chat
+    category: chat
+    prompt: "Say hello in one short sentence."
+    disable_toolsets: [browser, web]   # terminal/code_execution already disabled on this build
+    assert:
+      - { type: no_error }
+      - { type: nonempty }
+      # Generous: cold one-shot library calls on the P40 are prefill-dominated.
+      - { type: latency_under, seconds: 40 }
+      # A plain greeting must NOT delegate and must resolve in ~1 model turn.
+      - { type: max_llm_calls, n: 2 }
+
+  - id: chat-quality
+    category: chat
+    prompt: "In two sentences, explain what a reverse proxy does."
+    disable_toolsets: [browser, web]
+    assert:
+      - { type: no_error }
+      # LLM-as-judge — optional; remove if you don't want a grader model call.
+      - { type: judge, rubric: "Correctly explains a reverse proxy in ~1-3 sentences.", threshold: 0.7 }
+
+  # ---- weather: should reach for the weather MCP (NOT web_search) ----
+  # Default weather location on this build: Woodstock IL 60098 (lat 42.3147,
+  # lon -88.4487). weather MCP tools: get_current_conditions, get_forecast,
+  # search_location, get_alerts.
+  - id: weather-explicit-woodstock
+    category: weather
+    prompt: "What's the weather in Woodstock IL right now?"
+    assert:
+      - { type: no_error }
+      # Emitted name assumption: `mcp_weather_get_current_conditions`.
+      # Bare form on some builds: `get_current_conditions`. Verify once.
+      - { type: tool_called, tool: mcp_weather_get_current_conditions }
+      - { type: contains_any, values: ["°", "degrees", "temperature", "forecast", "humidity"] }
+      # Single direct tool call — weather should not fan out into delegation.
+      - { type: max_llm_calls, n: 3 }
+
+  - id: weather-implicit-default
+    category: weather
+    # IDENTITY-CONTEXT DEPENDENCY: with no city named, the agent must resolve to
+    # the default location (Woodstock IL). That default lives in the weather
+    # profile / identity context — if skip_context_files=True strips it, the agent
+    # may ask "which city?" instead. If this case flaps, the cause is the
+    # identity-context gap, not the weather tool. (Flagged in CHANGELOG.)
+    prompt: "What is the weather?"
+    assert:
+      - { type: no_error }
+      - { type: contains_any, values: ["Woodstock", "°", "temperature", "forecast"] }
+
+  - id: weather-forecast
+    category: weather
+    prompt: "Give me the forecast for Woodstock IL for the next few days."
+    assert:
+      - { type: no_error }
+      # Emitted name assumption: `mcp_weather_get_forecast` (bare: `get_forecast`).
+      - { type: tool_called, tool: mcp_weather_get_forecast }
+      - { type: contains_any, values: ["forecast", "tomorrow", "high", "low", "°"] }
+
+  # ---- ops: must use the cluster-ops MCP, NOT terminal (terminal is disabled) ----
+  # cluster-ops MCP tools: service_status, journal_tail, disk_usage, docker_ps,
+  # exec_raw, cluster_snapshot. NOTE: the `ops` profile carries mcp-cluster-ops;
+  # the default orchestrator (cli/telegram) does NOT — run these with the ops
+  # profile, or skip the ops category for the orchestrator profile.
+  - id: ops-service-status
+    category: ops
+    prompt: "Is the hermes-gateway service running?"
+    assert:
+      - { type: no_error }
+      # Emitted name assumption: `cluster_ops_service_status`.
+      # Some MCP bridges prefix `mcp_`: `mcp_cluster_ops_service_status`. Verify once.
+      - { type: tool_called, tool: cluster_ops_service_status }
+      # This is the CORE anti-pattern guard: a single direct call, NOT delegation.
+      - { type: not_tool_called, tool: delegate_task }
+      - { type: max_llm_calls, n: 3 }
+
+  - id: ops-disk
+    category: ops
+    prompt: "How much disk is free on this host?"
+    assert:
+      - { type: no_error }
+      # Emitted name assumption: `cluster_ops_disk_usage`
+      # (or `mcp_cluster_ops_disk_usage`).
+      - { type: tool_called, tool: cluster_ops_disk_usage }
+      - { type: not_tool_called, tool: delegate_task }
+      - { type: regex, pattern: "\\d{1,3}%|\\d+(\\.\\d+)?\\s?(G|T|M)i?B?" }
+      - { type: max_llm_calls, n: 3 }
