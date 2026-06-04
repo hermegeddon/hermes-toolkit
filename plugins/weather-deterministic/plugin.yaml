@@ -1,0 +1,41 @@
+name: weather-deterministic
+version: 1.1.0
+kind: standalone
+description: >-
+  Deterministic weather path that bypasses the LLM entirely. Detects weather
+  intent on inbound gateway messages, rewrites them to a /weather command, and
+  answers from the free Open-Meteo API. Zero LLM calls, zero MCP. The default
+  location (used for a bare "what's the weather" with no city named) is
+  config-driven — set it in the config block below. Also exposes /weather as a
+  slash command.
+author: hermes-gateway-engineer
+provides_hooks:
+  - pre_gateway_dispatch
+provides_commands:
+  - weather
+
+# ── Default-location configuration ─────────────────────────────────────────
+# When a message names a city ("weather in Denver") the plugin geocodes it.
+# When NO city is named ("what's the weather") it falls back to the default
+# location below. Override these in your hermes config.yaml under:
+#
+#   plugins:
+#     weather-deterministic:
+#       default_lat: 40.7128          # your latitude  (decimal degrees)
+#       default_lon: -74.0060         # your longitude (decimal degrees)
+#       timezone: America/New_York    # IANA tz name (local day rollovers)
+#       location_name: "New York, NY" # label shown in the reply
+#
+# Or via environment variables (highest priority — handy for CI / containers):
+#   WEATHER_DEFAULT_LAT, WEATHER_DEFAULT_LON,
+#   WEATHER_DEFAULT_TIMEZONE, WEATHER_DEFAULT_LOCATION_NAME
+#
+# The keys below are read by weather_core.py from the same-named config block;
+# they are documented here for discoverability. If you set nothing, the plugin
+# falls back to a neutral EXAMPLE coordinate (Greenwich / the Prime Meridian)
+# so a fresh install answers *something* — change it to your own location.
+config:
+  default_lat: 51.4779            # EXAMPLE — Royal Observatory, Greenwich. CHANGE ME.
+  default_lon: -0.0015            # EXAMPLE — change to your longitude.
+  timezone: Europe/London        # EXAMPLE — change to your IANA timezone.
+  location_name: "Greenwich, London (EXAMPLE — change me)"
