@@ -7,3 +7,4 @@ __pycache__/
 *.baseline.md
 *.run.log
 moa-e2e.*
+.pytest_cache/

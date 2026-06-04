@@ -1,0 +1,27 @@
+name: intent-handlers-core
+version: 1.0.0
+kind: standalone
+description: >-
+  Deterministic pre-LLM intent handlers that bypass the agent/LLM entirely,
+  mirroring the weather-deterministic plugin pattern. Detects a small set of
+  fully-deterministic intents on inbound gateway messages, rewrites them to a
+  namespaced slash command, and answers from pure Python (time/date) or a
+  single bounded cluster-ops MCP call (disk, service-status). Zero LLM calls,
+  zero agent run. Each handler falls through (no rewrite) on ANY doubt.
+  Intents: time/date (/time), disk free (/diskfree, cluster-ops disk_usage on
+  host hermes), service status (/svcstatus, cluster-ops service_status on host
+  hermes). Also exposes /time, /diskfree, /svcstatus as slash commands.
+author: hermes-gateway-engineer
+provides_hooks:
+  - pre_gateway_dispatch
+provides_commands:
+  - time
+  - diskfree
+  - svcstatus
+requires_env:
+  # Optional. Without these the disk / service-status handlers fall through to
+  # the agent (time/date still works). Set in ~/.hermes/.env.
+  - name: CLUSTER_OPS_URL
+    optional: true
+  - name: CLUSTER_OPS_TOKEN
+    optional: true
