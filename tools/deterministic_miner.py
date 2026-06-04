@@ -62,7 +62,7 @@ import time
 import urllib.error
 import urllib.request
 from collections import Counter
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 # --------------------------------------------------------------------------- #
 # Defaults
@@ -350,9 +350,17 @@ def embed_prompts(
                 embs = None
             if embs:
                 for j, idx in enumerate(batch_idx):
-                    vectors[idx] = embs[j]
-                    cache[keys[idx]] = embs[j]
-                    dim = len(embs[j])
+                    vec = embs[j]
+                    if not vec:  # None or empty — skip; leave vectors[idx] as None
+                        print(
+                            f"[warn] empty/None embedding for prompt at index {idx}; "
+                            "skipping (will be treated as un-embeddable singleton)",
+                            file=sys.stderr,
+                        )
+                        continue
+                    vectors[idx] = vec
+                    cache[keys[idx]] = vec
+                    dim = len(vec)
         _cache_save(cache_path, cache)
 
     return vectors, dim
