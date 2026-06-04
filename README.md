@@ -27,6 +27,11 @@ hermes-toolkit/
 │   ├── hermes-skill-authoring/         # the Hermes SKILL.md contract
 │   ├── hermes-orchestration-routing/   # v2: match mechanism to task (direct vs delegate)
 │   ├── hermes-deploy-guard/            # v2: deploy invariant + recovery commands
+│   ├── hermes-fork-maintainer/         # v3: rebase fork, rebuild integration branch, conflicts
+│   ├── hermes-debug/                   # v3: ordered symptom→check→fix triage checklist
+│   ├── hermes-performance/             # v3: local-model latency levers (warm path, prefill, GPU)
+│   ├── _shared/
+│   │   └── hermes-triage.sh            # shared read-only triage + branch-invariant guard
 │   └── hermes-eval-harness/            # how to drive the harness…
 │       └── scripts/
 │           ├── hermes_eval.py          # …the harness itself (the speed fix)
@@ -76,6 +81,28 @@ through `delegate_task` — 6–17 model calls, 90–150s, sometimes wandering a
 timing out — when the correct answer is a single direct `cluster-ops.service_status`
 call. The routing skill, the routing suite, and the new assertions exist to make
 that mis-route impossible to ship unnoticed.
+
+## Skills (8 total)
+
+The toolkit now ships **8 skills**. The three Tier-1 operational skills are
+generalized for sharing — each leads with generic activation triggers and the
+transferable insight, then scopes box-specifics to a "this setup" clause:
+
+| Skill | What it's for |
+|---|---|
+| `hermes-internals` | the map: 4 surfaces, AIAgent knobs, gateway internals, CT 133 realities |
+| `hermes-skill-authoring` | the Hermes SKILL.md contract (the dialect you produce *for* Hermes) |
+| `hermes-orchestration-routing` | match mechanism to task: direct tool call vs delegate |
+| `hermes-deploy-guard` | the editable-install deploy invariant + recovery commands |
+| `hermes-eval-harness` | drive the in-process/parallel test harness with assertions |
+| `hermes-fork-maintainer` | maintain a personal fork: rebase onto upstream, rebuild the integration branch, resolve hot-file conflicts, enforce the branch invariant |
+| `hermes-debug` | ordered symptom→check→fix triage for a misbehaving install (branch drift, config drift, 404s, delegation explosion, dead-looking gateway) |
+| `hermes-performance` | tune local-model latency: warm path, toolset trimming, tool_search pinning, model resident, context VRAM tradeoff, GPU serving backend |
+
+`hermes-debug` and `hermes-fork-maintainer` share one read-only helper,
+`skills/_shared/hermes-triage.sh` (symlinked into each skill's `scripts/`): a
+branch-invariant guard + two-config drift check, fully env-overridable (`HERMES_REPO`,
+`HERMES_BRANCH`, `HERMES_GW_CONFIG`, `HERMES_CLI_CONFIG`, …) with CT 133 defaults.
 
 ## ⚠️ Two SKILL.md dialects — don't confuse them
 

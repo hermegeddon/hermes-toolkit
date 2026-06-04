@@ -1,0 +1,20 @@
+suite: moa-e2e
+defaults:
+  max_iterations: 6
+  timeout: 180
+cases:
+  - id: moa-consensus-triggered
+    category: moa
+    prompt: "Use the mixture_of_agents tool to get a multi-model consensus answer: what is an efficient algorithm to find the k-th smallest element in an unsorted array, and its average time complexity? Then give me the consensus answer."
+    toolsets: [moa]
+    assert:
+      - { type: tool_called, tool: mixture_of_agents }
+      - { type: nonempty }
+      - { type: contains_any, values: ["quickselect", "O(n)", "selection", "median"] }
+  - id: moa-not-overtriggered
+    category: moa
+    prompt: "Say the single word: pong"
+    toolsets: [moa]
+    assert:
+      - { type: not_tool_called, tool: mixture_of_agents }
+      - { type: contains, value: "pong" }

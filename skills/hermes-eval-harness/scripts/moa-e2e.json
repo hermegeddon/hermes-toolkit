@@ -1,0 +1,74 @@
+{
+  "summary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "latency_p50": 66.06,
+    "latency_p95": 66.06,
+    "latency_max": 66.06,
+    "by_category": {
+      "moa": {
+        "pass": 2,
+        "total": 2,
+        "rate": 1.0
+      }
+    },
+    "wall_seconds": 66.1
+  },
+  "results": [
+    {
+      "id": "moa-consensus-triggered",
+      "category": "moa",
+      "ok": true,
+      "latency": 66.05714154499583,
+      "response": "The multi-model consensus \u2014 using QuickSelect with randomized pivot selection:\n\n**Algorithm:** QuickSelect (introduced by T.W.R.Auk)  \n- Choose a random pivot element, partition the array into < pivot and \u2265 pivot groups\n- Recurse only into whichever side contains the k-th element\n- Repeatedly called sub-problems shrink \u2014 no need to sort anything beyond what you need\n\n**Average-case time complexity:** **O(n)**  \nThe first call partitions in n comparisons. The second works on roughly half the data (n/2), then n/4, and so on: n + n/2 + n/4 + \u22ef \u2248 2n. This holds regardless of k \u2014 finding the median takes just as much work on average as finding the first or last element.\n\n**Worst-case:** O(n\u00b2) if you consistently hit unbalanced partitions (pick pivot = min every time). Randomized pivots make this vanishingly unlikely, and techniques like median-of-three mitigate it further. For a guaranteed O(n) worst case you can use the **BFPRT algorithm** (median of medians), but in practice QuickSelect wins on cache behavior and constant factors.",
+      "tool_calls": [
+        "mixture_of_agents",
+        "mixture_of_agents",
+        "mixture_of_agents"
+      ],
+      "llm_calls": 2,
+      "assertions": [
+        {
+          "type": "tool_called",
+          "ok": true,
+          "detail": "tool 'mixture_of_agents' not in ['mixture_of_agents', 'mixture_of_agents', 'mixture_of_agents']"
+        },
+        {
+          "type": "nonempty",
+          "ok": true,
+          "detail": "ok"
+        },
+        {
+          "type": "contains_any",
+          "ok": true,
+          "detail": "none of ['quickselect', 'O(n)', 'selection', 'median'] present"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "moa-not-overtriggered",
+      "category": "moa",
+      "ok": true,
+      "latency": 15.053931902861223,
+      "response": "pong",
+      "tool_calls": [],
+      "llm_calls": 1,
+      "assertions": [
+        {
+          "type": "not_tool_called",
+          "ok": true,
+          "detail": "tool 'mixture_of_agents' was called (got [])"
+        },
+        {
+          "type": "contains",
+          "ok": true,
+          "detail": "missing 'pong'"
+        }
+      ],
+      "error": null
+    }
+  ]
+}
