@@ -5,9 +5,14 @@
 #   python ../hermes_eval.py --suite smoke.yaml --backend library --workers 6
 #
 # CT 133 environment defaults (set these for your run):
-#   library backend (default): point AIAgent at the live provider. Main model is
+#   library backend (default): now loads the DEPLOYED config automatically
+#     (--use-deployed-config is ON by default), so it drives the real deployed model
 #     apex-fast:latest via provider:custom -> Ollama http://192.168.1.28:11434/v1.
-#       --model apex-fast:latest        (and the agent's base_url config)
+#     Just point HERMES_HOME at the deployed config and run:
+#       HERMES_HOME=/opt/hermes/home/.hermes \
+#         python ../hermes_eval.py --suite smoke.yaml --backend library --workers 6
+#     (No need to pass --model apex-fast:latest by hand anymore. To force a different
+#      model use --model …; to test a bare-default agent use --bare.)
 #   api backend (gateway serving path, see gateway.yaml):
 #       --base-url http://localhost:8643/v1
 #   cli backend (slow A/B baseline only):

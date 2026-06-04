@@ -1,0 +1,36 @@
+# smoke-deployed — minimal 2-case suite that proves the `library` backend now drives
+# the DEPLOYED agent (apex-fast:latest via provider:custom -> Ollama) rather than a
+# bare-default AIAgent. Pairs with the --use-deployed-config default (see SKILL.md).
+#
+#   HERMES_HOME=/opt/hermes/home/.hermes \
+#     python ../hermes_eval.py --suite smoke-deployed.yaml --backend library --workers 2
+#
+# The harness prints a `[library] effective model: apex-fast:latest (from deployed
+# config) ...` line at startup; these cases additionally exercise a real round-trip so
+# a wrong/nonexistent model (the pre-fix Sonnet-on-Ollama mismatch) surfaces as an
+# error instead of a silent green.
+suite: smoke-deployed
+
+defaults:
+  max_iterations: 4
+  timeout: 90
+  # No tools needed — keep it a pure chat round-trip so this stays fast and only
+  # tests "can we actually reach the deployed model and get a reply".
+  disable_toolsets: [browser, web, terminal, code_execution]
+
+cases:
+  - id: deployed-chat-hello
+    category: deployed
+    prompt: "Reply with exactly the word: pong"
+    assert:
+      - { type: no_error }      # fails loudly if the model name isn't served at the endpoint
+      - { type: nonempty }
+      - { type: contains, value: "pong" }
+      - { type: max_llm_calls, n: 2 }   # a one-word reply must not delegate/loop
+
+  - id: deployed-chat-arith
+    category: deployed
+    prompt: "What is 2 + 2? Answer with just the number."
+    assert:
+      - { type: no_error }
+      - { type: contains, value: "4" }

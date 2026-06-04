@@ -66,6 +66,48 @@ call skips the overhead that dominates a cold CLI start, and the
 `ThreadPoolExecutor` runs `--workers` cases at once. (Always one fresh `AIAgent`
 per task — the harness does this; the agent is not thread-safe to share.)
 
+### Mirroring the DEPLOYED agent (`--use-deployed-config`, default ON)
+
+By default the `library` backend loads the **deployed** config — model, provider,
+`base_url`, `api_key`, and toolsets — via the project's own loader
+(`hermes_cli.config.load_config`, honoring `HERMES_HOME`), so an in-process run
+mirrors the agent you actually ship instead of a bare-default `AIAgent`. It prints
+the resolved model up front:
+
+```
+[library] effective model: apex-fast:latest  (from deployed config)  endpoint=… HERMES_HOME=…
+```
+
+This closes the config-drift trap (see the `hermes-internals` skill): without it the
+harness sends a *generic* model name (the `--model` default,
+`anthropic/claude-sonnet-4.6`) while `AIAgent` still picks up the deployed
+`base_url` internally — i.e. it points a model the endpoint doesn't serve at your
+local Ollama box and 404s, making the eval meaningless. Point `HERMES_HOME` at the
+config you want (`/opt/hermes/home/.hermes` for the TUI/CLI file, or the gateway's
+`$HERMES_HOME/config.yaml`); the loader honors whichever you set — no path is
+hardcoded.
+
+**Overrides (precedence, highest first):** explicit `--model` → a suite's
+`defaults.model` / per-case `model` → the deployed model. Per-case `toolsets` /
+`disable_toolsets`, `--base-url`, and `--api-key` likewise override the deployed
+values. The speed knobs (`skip_memory` / `skip_context_files` / low
+`max_iterations`) are **always** applied — you get the deployed *brain and tools*,
+not its memory/context-file behavior.
+
+```bash
+# default: mirror the deployed agent (apex-fast via the configured provider)
+HERMES_HOME=/opt/hermes/home/.hermes \
+  python scripts/hermes_eval.py --suite scripts/suites/smoke.yaml --backend library
+
+# escape hatch: the OLD behavior — a bare-default AIAgent driven only by --model
+python scripts/hermes_eval.py --suite scripts/suites/smoke.yaml --bare \
+  --model anthropic/claude-sonnet-4.6
+```
+
+`--bare` (alias `--no-deployed-config`) restores the pre-deployed-config behavior;
+the `api` and `cli` backends are unaffected by this flag (they use `--model`
+verbatim).
+
 ## Suite schema (YAML)
 
 ```yaml

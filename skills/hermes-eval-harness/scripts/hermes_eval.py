@@ -123,22 +123,137 @@ def _count_llm_calls(messages: list[dict[str, Any]]) -> int:
     return sum(1 for m in (messages or []) if isinstance(m, dict) and m.get("role") == "assistant")
 
 
+def _resolve_deployed_config() -> dict[str, Any]:
+    """Load the DEPLOYED Hermes config via the project's own loader, honoring HERMES_HOME.
+
+    WHY: without this the library backend builds a bare-default AIAgent and tests a
+    GENERIC model (the --model default, e.g. anthropic/claude-sonnet-4.6), not the
+    agent you actually deploy. Worse, AIAgent still picks up the deployed base_url
+    from config internally, so a stock run sends a model name the deployed endpoint
+    doesn't serve (Sonnet-4.6 → a local Ollama box) — a silent mismatch that makes
+    eval results meaningless for prod. This pulls model/provider/base_url/api_key and
+    toolsets from the SAME config the CLI/gateway read so a library run mirrors prod.
+
+    HOW: use the project's standard loader (`hermes_cli.config.load_config`, falling
+    back to `cli.load_cli_config`). Both key off HERMES_HOME via get_config_path(), so
+    whichever config.yaml that env selects — the gateway's `$HERMES_HOME/config.yaml`
+    or the TUI/CLI's — is the one honored. No path is hardcoded here (the two deployed
+    files drift; see the hermes-internals config-drift gotcha).
+
+    The deployed `model` may be a plain string OR a mapping
+    (`{default, base_url, provider, api_key, ...}`); both are normalized. A literal
+    "none"/"" api_key means "no key" and is dropped so we don't send a bogus bearer.
+
+    Returns a dict with any of: model, base_url, api_key, provider, toolsets,
+    disabled_toolsets. Empty dict if no loader/config is available (callers then keep
+    their existing --model default — fully backward-compatible).
+    """
+    load = None
+    try:
+        from hermes_cli.config import load_config as load  # canonical, deep-merged
+    except Exception:  # noqa: BLE001
+        try:
+            from cli import load_cli_config as load  # older surface, same HERMES_HOME keying
+        except Exception:  # noqa: BLE001
+            return {}
+    try:
+        cfg = load() or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+    def _clean_key(v: Any) -> str | None:
+        s = str(v or "").strip()
+        return None if s.lower() in ("", "none", "null") else s
+
+    out: dict[str, Any] = {}
+    m = cfg.get("model")
+    if isinstance(m, dict):
+        if m.get("default"):
+            out["model"] = m["default"]
+        if m.get("base_url"):
+            out["base_url"] = m["base_url"]
+        if m.get("provider"):
+            out["provider"] = m["provider"]
+        if _clean_key(m.get("api_key")):
+            out["api_key"] = _clean_key(m.get("api_key"))
+    elif isinstance(m, str) and m.strip():
+        out["model"] = m.strip()
+
+    # Endpoint/key can also live at config top level on some builds.
+    if not out.get("base_url") and cfg.get("base_url"):
+        out["base_url"] = cfg["base_url"]
+    if not out.get("api_key") and _clean_key(cfg.get("api_key")):
+        out["api_key"] = _clean_key(cfg.get("api_key"))
+
+    if cfg.get("toolsets"):
+        out["toolsets"] = cfg["toolsets"]
+    ag = cfg.get("agent") or {}
+    if isinstance(ag, dict) and ag.get("disabled_toolsets"):
+        out["disabled_toolsets"] = ag["disabled_toolsets"]
+    return out
+
+
+# Cache the deployed-config resolve once per process (load_config is itself cached,
+# but this also memoizes the "loader unavailable" outcome and keeps run_library lean).
+_DEPLOYED_CFG_CACHE: dict[str, Any] = {}
+
+
+def _deployed_config() -> dict[str, Any]:
+    if "v" not in _DEPLOYED_CFG_CACHE:
+        _DEPLOYED_CFG_CACHE["v"] = _resolve_deployed_config()
+    return _DEPLOYED_CFG_CACHE["v"]
+
+
 def run_library(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], int, str | None]:
     from run_agent import AIAgent  # imported lazily so api/cli modes need no install
 
+    # Deployed config is the BASE; explicit per-case / CLI values layer on top so a
+    # suite `defaults.model` or `--model` still wins. Only the deployed MODEL/PROVIDER/
+    # ENDPOINT/TOOLSETS are adopted — the speed knobs below (quiet/skip_memory/
+    # skip_context_files/low max_iterations) are kept regardless, by design: we want
+    # the deployed agent's brain + tools, not its memory/context-file behavior.
+    dep = _deployed_config() if cfg.get("use_deployed_config", True) else {}
+
+    # model precedence: explicit model (suite defaults.model / per-case model / --model)
+    #   > deployed model > nothing.
+    # We adopt the deployed model ONLY on a truly bare run: the user did not pass
+    # --model (model_is_default) AND no suite/case overrode it (cfg["model"] is still
+    # the exact runtime placeholder). run_case merges {**runtime, **case}, so a suite
+    # `defaults.model` or per-case `model` replaces cfg["model"] and therefore wins —
+    # comparing against the carried placeholder distinguishes "user/suite chose this"
+    # from "nobody chose, fall through to deployed".
+    model = cfg.get("model")
+    placeholder = cfg.get("_runtime_model_default")
+    user_set_model = not cfg.get("model_is_default") or (model != placeholder)
+    if dep.get("model") and not user_set_model:
+        model = dep["model"]
+    elif not model:
+        model = dep.get("model")
+
+    base_url = cfg.get("base_url") or dep.get("base_url")
+    api_key = cfg.get("api_key") or dep.get("api_key")
+    provider = cfg.get("provider") or dep.get("provider")
+    # toolsets: explicit per-case `toolsets` wins; else fall back to deployed toolsets.
+    toolsets = cfg.get("toolsets") or dep.get("toolsets")
+    disabled = cfg.get("disable_toolsets") or dep.get("disabled_toolsets")
+
     kwargs: dict[str, Any] = dict(
-        model=cfg["model"],
+        model=model,
         quiet_mode=True,        # never print spinners when embedded
         skip_memory=True,       # stateless QA — don't read/write MEMORY.md
         skip_context_files=True,  # don't pull AGENTS.md/.hermes.md into the prompt
         max_iterations=cfg.get("max_iterations", 6),  # cap runaway tool loops
     )
-    if cfg.get("toolsets"):
-        kwargs["enabled_toolsets"] = cfg["toolsets"]
-    if cfg.get("disable_toolsets"):
-        kwargs["disabled_toolsets"] = cfg["disable_toolsets"]
-    if cfg.get("base_url"):
-        kwargs["base_url"] = cfg["base_url"]
+    if toolsets:
+        kwargs["enabled_toolsets"] = toolsets
+    if disabled:
+        kwargs["disabled_toolsets"] = disabled
+    if base_url:
+        kwargs["base_url"] = base_url
+    if api_key:
+        kwargs["api_key"] = api_key
+    if provider:
+        kwargs["provider"] = provider
 
     try:
         agent = AIAgent(**kwargs)
@@ -499,7 +614,13 @@ def main() -> int:
     p = argparse.ArgumentParser(description="Fast parallel QA harness for Hermes Agent")
     p.add_argument("--suite", nargs="+", required=True, help="One or more suite YAML files (globs OK)")
     p.add_argument("--backend", choices=list(BACKENDS), default="library")
-    p.add_argument("--model", default=os.environ.get("HERMES_QA_MODEL", "anthropic/claude-sonnet-4.6"))
+    # default=None is a SENTINEL: it lets us tell "user passed --model" apart from
+    # "user took the default", so the library backend can prefer the DEPLOYED model on
+    # a bare run while still letting an explicit --model (or HERMES_QA_MODEL) win.
+    p.add_argument("--model", default=None,
+                   help="Model under test. If omitted, the library backend uses the "
+                        "DEPLOYED model from config (see --bare); api/cli fall back to "
+                        "HERMES_QA_MODEL or anthropic/claude-sonnet-4.6.")
     p.add_argument("--judge-model", default=None, help="Model for `judge` assertions (defaults to --model)")
     p.add_argument("--workers", type=int, default=6)
     p.add_argument("--timeout", type=int, default=120, help="Per-request timeout (s)")
@@ -510,15 +631,42 @@ def main() -> int:
     p.add_argument("--baseline", default=None, help="Previous report.json to diff against")
     p.add_argument("--out", default=None, help="Write full JSON report here")
     p.add_argument("--md", default=None, help="Write a Markdown summary here")
+    # library backend only: load the DEPLOYED model/provider/endpoint/toolsets from
+    # config (honoring HERMES_HOME) so a library run mirrors the deployed agent rather
+    # than a bare-default AIAgent. ON by default; --bare restores the old behavior.
+    dep = p.add_mutually_exclusive_group()
+    dep.add_argument("--use-deployed-config", dest="use_deployed_config",
+                     action="store_true", default=True,
+                     help="(library, default) Build AIAgent from the deployed config "
+                          "(model/provider/base_url/api_key/toolsets) via the project "
+                          "loader, honoring HERMES_HOME. An explicit --model or suite "
+                          "defaults.model still wins.")
+    dep.add_argument("--bare", "--no-deployed-config", dest="use_deployed_config",
+                     action="store_false",
+                     help="(library) Do NOT load the deployed config; build a "
+                          "bare-default AIAgent driven only by --model/--base-url "
+                          "(the pre-deployed-config behavior).")
     args = p.parse_args()
 
     if args.backend == "api" and not args.base_url:
         p.error("--backend api requires --base-url")
 
+    # Resolve the --model sentinel. For api/cli (and library --bare) we still need a
+    # concrete model, so fall back to the env/historic placeholder. model_is_default
+    # records "the user did not pass --model", which run_library uses to prefer the
+    # deployed model on a bare invocation.
+    model_is_default = args.model is None
+    model = args.model or os.environ.get("HERMES_QA_MODEL", "anthropic/claude-sonnet-4.6")
+
     runtime = {
         "backend": args.backend,
-        "model": args.model,
-        "judge_model": args.judge_model or args.model,
+        "model": model,
+        "model_is_default": model_is_default,
+        # The exact runtime placeholder, carried so run_library can tell a bare run
+        # (cfg["model"] still == this) from a suite/case override (cfg["model"] changed).
+        "_runtime_model_default": model,
+        "use_deployed_config": args.use_deployed_config,
+        "judge_model": args.judge_model or model,
         "workers": args.workers,
         "timeout": args.timeout,
         "base_url": args.base_url,
@@ -527,6 +675,23 @@ def main() -> int:
         "hermes_home": args.hermes_home,
     }
     _JUDGE_CACHE["cfg"] = runtime
+
+    # One-line provenance so before/after is visible in the output: show what the
+    # library backend will actually drive AIAgent with. (Library backend only; the
+    # api/cli backends use runtime["model"] verbatim.)
+    if args.backend == "library":
+        if args.use_deployed_config:
+            _dep = _deployed_config()
+            eff_model = (_dep.get("model") if model_is_default and _dep.get("model") else model)
+            src = "deployed config" if (model_is_default and _dep.get("model")) else "--model"
+            print(f"[library] effective model: {eff_model}  (from {src})"
+                  f"  endpoint={args.base_url or _dep.get('base_url') or '(agent default)'}"
+                  f"  HERMES_HOME={os.environ.get('HERMES_HOME') or '(unset)'}")
+            if not _dep:
+                print("[library] note: no deployed config resolved (loader/config "
+                      "unavailable) — falling back to --model default.")
+        else:
+            print(f"[library] effective model: {model}  (--bare: deployed config NOT loaded)")
 
     paths: list[str] = []
     for pat in args.suite:
