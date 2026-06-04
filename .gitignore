@@ -3,3 +3,7 @@ __pycache__/
 *.report.json
 *.report.md
 .baseline*.json
+*.baseline.json
+*.baseline.md
+*.run.log
+moa-e2e.*

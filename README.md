@@ -1,194 +1,129 @@
 # hermes-toolkit
 
-A Claude Code / claude-mpm package of **specialists + skills + a fast test harness**
-for working on a [Hermes Agent](https://hermes-agent.nousresearch.com) install:
-developing skills, evaluating skills, evaluating the live agent, and engineering +
-testing gateways.
+A Claude Code / claude-mpm toolkit for developing, testing, debugging, operating, and tuning NousResearch Hermes Agent installs.
 
-It exists to fix one specific pain: QA that was being done by looping
-`hermes chat -Q -q "…"` — serial, cold-start-per-call, slow, and unstructured. The
-harness here runs whole suites **in-process and in parallel**, with assertions and
-regression tracking, so a dozen checks finish in seconds instead of minutes.
+---
 
 ## What's inside
 
-```
-hermes-toolkit/
-├── agents/                         # Claude Code subagents  → ~/.claude/agents/
-│   ├── hermes-skill-developer.md       # (1) develop skills
-│   ├── hermes-skill-evaluator.md       # (2) evaluate skills
-│   ├── hermes-evaluator.md             # (3) evaluate the live hermes instance
-│   ├── hermes-gateway-engineer.md      # (4) engineer gateways
-│   ├── hermes-gateway-tester.md        # (5) test & improve gateways
-│   └── hermes-deploy-guard.md          # (6) v2: protect the live editable install
-├── skills/                         # Claude Agent Skills    → .claude/skills/
-│   ├── hermes-internals/               # the map: 4 surfaces, AIAgent knobs, gateway internals
-│   │                                   #   (+ v2: CT 133 deployment realities)
-│   ├── hermes-skill-authoring/         # the Hermes SKILL.md contract
-│   ├── hermes-orchestration-routing/   # v2: match mechanism to task (direct vs delegate)
-│   ├── hermes-deploy-guard/            # v2: deploy invariant + recovery commands
-│   ├── hermes-fork-maintainer/         # v3: rebase fork, rebuild integration branch, conflicts
-│   ├── hermes-debug/                   # v3: ordered symptom→check→fix triage checklist
-│   ├── hermes-performance/             # v3: local-model latency levers (warm path, prefill, GPU)
-│   ├── _shared/
-│   │   └── hermes-triage.sh            # shared read-only triage + branch-invariant guard
-│   └── hermes-eval-harness/            # how to drive the harness…
-│       └── scripts/
-│           ├── hermes_eval.py          # …the harness itself (the speed fix)
-│           └── suites/{smoke,gateway,routing}.yaml   # routing.yaml is v2
-├── prompts/
-│   └── kickoff.md                  # paste-in prompt to start the workflow
-└── README.md
-```
+The toolkit has two layers that work together:
 
-The **agents** are thin role-routers. The depth lives in the **skills** (shared
-knowledge, loaded on demand) and the **harness**. This keeps each agent small and
-avoids duplicating the Hermes knowledge across them.
+**Claude layer** — specialist subagents and knowledge skills that install into `.claude/agents` and `.claude/skills`. They give Claude Code first-class support for every common Hermes workflow: writing skills, evaluating them, running the eval harness, debugging a misbehaving install, maintaining a personal fork, and guarding the live deployment.
 
-## v2 improvements (CT 133 calibration)
+**Hermes layer** — a fast parallel eval harness (`hermes_eval.py`) that drives a live Hermes instance directly via the Python library, the OpenAI-compatible API, or the CLI. It runs whole suites concurrently with structured assertions and regression tracking, replacing the slow pattern of one cold-start `hermes chat` call per check.
 
-v2 folds in verified, measured findings from running this toolkit against the
-live CT 133 (`hermes`, 192.168.1.33) install. See `CHANGELOG.md` for the full
-diff and the list of assumptions that still need live verification.
+---
 
-- **A — eval suites calibrated to the real build.** `smoke.yaml` / `gateway.yaml`
-  drop the placeholder tool names (`web_search`, `terminal`) for the real ones:
-  weather via the weather MCP (`get_current_conditions` / `get_forecast`, default
-  location **Woodstock IL**), ops via the **cluster-ops MCP** — because `terminal`
-  and `code_execution` are **disabled** on this build. Gateway endpoint defaults
-  to `:8643`.
-- **B — new `routing.yaml` suite.** Encodes "match mechanism to task": status /
-  disk / log queries must be ONE direct cluster-ops call (`not_tool_called:
-  delegate_task`, `max_llm_calls: 3`); debug-and-fix / plan SHOULD delegate. This
-  is the suite that catches the **delegation-explosion** anti-pattern.
-- **C — harness assertion types added** (`hermes_eval.py`): `max_llm_calls`,
-  `not_tool_called`, `max_tool_calls` — to fail runs that wander or mis-delegate.
-  Library backend only (they read the trajectory).
-- **D — new `hermes-orchestration-routing` skill.** The verified routing rule
-  (direct vs delegate) + claude-mpm delegation primitives + a drop-in
-  SOUL.md/AGENTS.md snippet validated against apex-fast (100% on direct-vs-delegate).
-- **E — `hermes-internals` enriched** with a "CT 133 deployment realities"
-  section: editable-install = running-branch (`integrated`), the two drifting
-  config files, disabled toolsets, tool_search deferral tradeoff, warm-vs-cold
-  latency, PID/lock symlink recreation, weather default.
-- **F — new `hermes-deploy-guard` agent + skill.** Protects the live editable
-  install: verifies branch == `integrated`, recreates the gateway PID/lock
-  symlinks, runs the post-restart smoke, and NEVER `git checkout`s a feature
-  branch on the live tree.
+## Agents
 
-**The core problem v2 targets:** simple ops ("is X running?") was being routed
-through `delegate_task` — 6–17 model calls, 90–150s, sometimes wandering and
-timing out — when the correct answer is a single direct `cluster-ops.service_status`
-call. The routing skill, the routing suite, and the new assertions exist to make
-that mis-route impossible to ship unnoticed.
+Six Claude Code subagents, each scoped to one job. Copy them into `~/.claude/agents/` (global) or `.claude/agents/` (project).
 
-## Skills (8 total)
-
-The toolkit now ships **8 skills**. The three Tier-1 operational skills are
-generalized for sharing — each leads with generic activation triggers and the
-transferable insight, then scopes box-specifics to a "this setup" clause:
-
-| Skill | What it's for |
+| Agent | Description |
 |---|---|
-| `hermes-internals` | the map: 4 surfaces, AIAgent knobs, gateway internals, CT 133 realities |
-| `hermes-skill-authoring` | the Hermes SKILL.md contract (the dialect you produce *for* Hermes) |
-| `hermes-orchestration-routing` | match mechanism to task: direct tool call vs delegate |
-| `hermes-deploy-guard` | the editable-install deploy invariant + recovery commands |
-| `hermes-eval-harness` | drive the in-process/parallel test harness with assertions |
-| `hermes-fork-maintainer` | maintain a personal fork: rebase onto upstream, rebuild the integration branch, resolve hot-file conflicts, enforce the branch invariant |
-| `hermes-debug` | ordered symptom→check→fix triage for a misbehaving install (branch drift, config drift, 404s, delegation explosion, dead-looking gateway) |
-| `hermes-performance` | tune local-model latency: warm path, toolset trimming, tool_search pinning, model resident, context VRAM tradeoff, GPU serving backend |
+| `hermes-evaluator` | Benchmarks and QAs a whole live Hermes instance across capability categories (basic chat, tool use, weather, ops). Runs checks fast and in parallel with latency and regression tracking. |
+| `hermes-gateway-engineer` | Engineers and extends the Hermes messaging gateway — platform adapters, lifecycle hooks, authorization, session routing, delivery, and provider routing. |
+| `hermes-gateway-tester` | Tests a Hermes gateway end-to-end — the serving path, authorization, session routing, slash-command dispatch, delivery, and agent-through-gateway behavior — then drives a failure-oriented improvement loop. |
+| `hermes-skill-developer` | Authors and edits skills for a Hermes Agent install, following the Hermes SKILL.md contract (frontmatter, conditional activation, env vars, template tokens). |
+| `hermes-skill-evaluator` | Builds and runs evaluation suites for an individual Hermes skill, scores results, finds failure classes, and recommends concrete edits. |
+| `hermes-deploy-guard` | Verifies and maintains the integrity of a live Hermes editable-install deployment where the checked-out git branch is the running code. |
 
-`hermes-debug` and `hermes-fork-maintainer` share one read-only helper,
-`skills/_shared/hermes-triage.sh` (symlinked into each skill's `scripts/`): a
-branch-invariant guard + two-config drift check, fully env-overridable (`HERMES_REPO`,
-`HERMES_BRANCH`, `HERMES_GW_CONFIG`, `HERMES_CLI_CONFIG`, …) with CT 133 defaults.
+---
 
-## ⚠️ Two SKILL.md dialects — don't confuse them
+## Skills
 
-- The files in `skills/*/SKILL.md` are **Claude / Anthropic Agent Skills**
-  (frontmatter = `name` + `description`). They're consumed by Claude Code /
-  claude-mpm and contain *knowledge about Hermes*.
-- A **Hermes skill** (what you install into your Hermes agent) is a *different*
-  artifact with richer frontmatter (`version`, `metadata.hermes`, `requires_*`, …).
-  The `hermes-skill-authoring` skill teaches that format.
+Eight Claude Code skills that encode Hermes-specific knowledge. Copy them into `~/.claude/skills/` (global) or `.claude/skills/` (project). Also includes a shared shell helper.
 
-So: these skills are written in the Claude dialect; the skills you'll *produce for
-Hermes* use the Hermes dialect. The authoring skill flags this explicitly.
+| Skill | Description |
+|---|---|
+| `hermes-eval-harness` | How to use the bundled `hermes_eval.py` harness: backends, assertion types, regression gating, config-mirror mode. |
+| `hermes-internals` | Authoritative map of the four Hermes surfaces (CLI, library, API server, gateway), which to use for which job, and the AIAgent constructor knobs that control speed and cost. |
+| `hermes-orchestration-routing` | How a Hermes orchestrator should route work: deterministic single-command ops go direct to a tool; reasoning/judgment work gets delegated with a structured goal and a verification gate. |
+| `hermes-skill-authoring` | How to author Hermes skills: the SKILL.md frontmatter contract, body structure, conditional activation, env vars and credential files, template tokens, inline shell, and media delivery. |
+| `hermes-deploy-guard` | The deployment invariant and recovery procedure for an editable install where the checked-out branch is the running code. |
+| `hermes-fork-maintainer` | Maintain a personal Hermes fork: rebase feature branches onto upstream, rebuild an integration branch, resolve conflicts on the hot files, and enforce the editable-install invariant. |
+| `hermes-debug` | Systematic ordered checklist for debugging a misbehaving Hermes install: wrong code running, config changes that don't take effect, provider 404s, ops queries that explode into many model calls, gateway issues. |
+| `hermes-performance` | Tune a local-model Hermes for latency: gateway/interactive path vs cold CLI, trimming toolsets per profile, keeping the model resident, the 32k-vs-64k context VRAM tradeoff, compression offload, and GPU backend choice. |
+
+**Shared helper:** `skills/_shared/hermes-triage.sh` — a read-only triage and deploy-invariant guard script used by both `hermes-debug` and `hermes-fork-maintainer`. Checks the branch invariant, two-config drift (gateway vs CLI config), and gateway PID/lock symlink consistency. Everything is overridable via `HERMES_*` environment variables (see the header comments).
+
+---
 
 ## Install
 
-**Claude Code (native):**
-```bash
-# project scope (recommended: check into the repo you manage Hermes from)
-cp -r hermes-toolkit/agents/*           .claude/agents/
-cp -r hermes-toolkit/skills/*           .claude/skills/
-# or user scope:  ~/.claude/agents/  and  ~/.claude/skills/
-```
-Run `/agents` in Claude Code to confirm the six specialists are listed.
+**Agents** — copy to your Claude agents directory:
 
-**claude-mpm:** drop the same files into the project's `.claude/agents/` and
-`.claude/skills/` (claude-mpm resolves bundled → user → project, project wins), or
-publish them to your own agent/skill source repo and add it:
 ```bash
-claude-mpm agent-source add https://github.com/<you>/<your-agents>
-claude-mpm skill-source add https://github.com/<you>/<your-skills>
+cp agents/*.md ~/.claude/agents/
+# or project-scoped:
+cp agents/*.md .claude/agents/
 ```
 
-**Harness deps:**
+**Skills** — copy to your Claude skills directory:
+
+```bash
+cp -r skills/hermes-eval-harness skills/hermes-internals \
+      skills/hermes-orchestration-routing skills/hermes-skill-authoring \
+      skills/hermes-deploy-guard skills/hermes-fork-maintainer \
+      skills/hermes-debug skills/hermes-performance \
+      skills/_shared \
+      ~/.claude/skills/
+# or project-scoped:
+cp -r skills/ .claude/skills/
+```
+
+**Python dependencies:**
+
 ```bash
 pip install pyyaml
-pip install git+https://github.com/NousResearch/hermes-agent.git   # for the library backend
 ```
 
-## Quickstart
+For the `library` backend (default, fastest — runs the agent in-process):
 
 ```bash
-cd hermes-toolkit/skills/hermes-eval-harness/scripts
-
-# in-process, parallel, full tool visibility (the new QA pass)
-python hermes_eval.py --suite suites/smoke.yaml --backend library --workers 6 \
-  --out report.json --md report.md
-
-# end-to-end through the gateway serving path
-python hermes_eval.py --suite suites/gateway.yaml --backend api \
-  --base-url http://localhost:8080/v1 --model anthropic/claude-sonnet-4.6
-
-# regression gate against a saved baseline (exits non-zero on any failure)
-python hermes_eval.py --suite 'suites/*.yaml' --baseline report.json
+pip install git+https://github.com/NousResearch/hermes-agent.git
 ```
 
-Or just talk to Claude: *"Run the Hermes QA pass"* routes to `hermes-evaluator`;
-*"write a Hermes skill that …"* routes to `hermes-skill-developer`; *"test the
-gateway"* routes to `hermes-gateway-tester`.
+---
 
-## How the specialists map to the five goals
+## Eval harness quickstart
 
-| Goal | Specialist | Leans on |
-|---|---|---|
-| 1. develop skills | `hermes-skill-developer` | `hermes-skill-authoring`, `hermes-internals` |
-| 2. evaluate skills | `hermes-skill-evaluator` | `hermes-eval-harness`, `hermes-skill-authoring` |
-| 3. evaluate hermes | `hermes-evaluator` | `hermes-eval-harness`, `hermes-internals` |
-| 4. engineer gateways | `hermes-gateway-engineer` | `hermes-internals` (gateway), `gateway/` source |
-| 5. test/improve gateways | `hermes-gateway-tester` | `hermes-eval-harness`, `hermes-internals` |
-| 6. guard the deploy (v2) | `hermes-deploy-guard` | `hermes-deploy-guard`, `hermes-internals` (CT 133 realities), `hermes-eval-harness` |
+The harness lives at `skills/hermes-eval-harness/scripts/hermes_eval.py`. Point it at a suite YAML and a backend:
 
-## Caveats (read before trusting it in automation)
+```bash
+# Smoke test against the deployed agent config (library backend, in-process, parallel)
+HERMES_HOME=/path/to/your/.hermes \
+python skills/hermes-eval-harness/scripts/hermes_eval.py \
+  --suite skills/hermes-eval-harness/scripts/suites/smoke.yaml \
+  --backend library \
+  --workers 6
 
-- **Tool-call assertions are schema-coupled.** `tool_called` reads the
-  `run_conversation` message trajectory; Hermes is roughly OpenAI-shaped but keys
-  drift across builds. If those assertions misbehave, print one
-  `result["messages"]` and adjust `_extract_tool_names()` in `hermes_eval.py`.
-- **API backend = final text only.** The OpenAI-compatible endpoint won't expose
-  intermediate tool calls. Use the `library` backend for tool checks, or observe
-  the gateway's `agent:step`/`agent:end` hooks.
-- **Verify version-specific details** (CLI flags like `-Q`, exact tool names) against
-  your installed Hermes build. v2 calibrates the suites to the CT 133 build, but
-  the **exact emitted MCP tool-call names are an assumption** (`cluster_ops_*` vs
-  `mcp_cluster_ops_*`, bare `get_current_conditions` vs prefixed) — print one
-  `result["messages"]` to confirm. See `CHANGELOG.md` → "Assumptions needing live
-  verification".
-- **Models named in examples** and the subagent `model:` fields are defaults. On
-  CT 133 the agent model is `apex-fast:latest` (Ollama @ 192.168.1.28); the Claude
-  subagent `model:` fields (sonnet/opus) drive the Claude Code specialists, not the
-  Hermes agent under test. Change to whatever your setup uses.
+# End-to-end through the gateway API
+python skills/hermes-eval-harness/scripts/hermes_eval.py \
+  --suite skills/hermes-eval-harness/scripts/suites/gateway.yaml \
+  --backend api \
+  --base-url http://localhost:8080/v1
+
+# Regression gate: compare against a saved baseline
+python skills/hermes-eval-harness/scripts/hermes_eval.py \
+  --suite 'skills/hermes-eval-harness/scripts/suites/*.yaml' \
+  --baseline last_report.json \
+  --out report.json --md report.md
+```
+
+**Bundled suites:** `smoke.yaml`, `smoke-deployed.yaml`, `gateway.yaml`, `routing.yaml`, `moa-e2e.yaml`.
+
+**Assertion types:** `contains`, `not_contains`, `regex`, `tool_called`, `not_tool_called`, `max_llm_calls`, `latency_under` (seconds).
+
+The `library` backend constructs `AIAgent` with `quiet_mode=True`, `skip_memory=True`, `skip_context_files=True`, and a low `max_iterations`, so each call avoids the overhead that dominates a cold CLI start. By default it mirrors the deployed config (model, provider, `base_url`, toolsets) via the project's own loader — so results reflect the agent you actually ship.
+
+---
+
+## Note on examples
+
+Examples and the bundled triage script default to the author's homelab setup (CT 133, internal IPs, an Ollama host, an `apex-fast` model, the `davidgut1982` fork). Substitute your own fork URL, host, paths, and model. The skills mark setup-specific values as "this setup", and `hermes-triage.sh` accepts `HERMES_*` environment variable overrides for every default path and branch name.
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE).
