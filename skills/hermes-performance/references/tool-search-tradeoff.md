@@ -1,6 +1,6 @@
 # The tool_search deferral tradeoff (pin vs defer)
 
-`tool_search` dynamic loading is ON on CT 133 (`enabled: auto`, `threshold_pct:
+`tool_search` dynamic loading is ON on the author's homelab build (`enabled: auto`, `threshold_pct:
 2.0`). Understand exactly what it trades before tuning it.
 
 ## What it does

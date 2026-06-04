@@ -20,7 +20,7 @@ most common (and most destructive) faults. Stop at the first one that explains t
 symptom.
 
 Run the fast triage first; it answers steps 1, 2, and 7 in one shot (env-overridable;
-defaults to this CT 133 setup):
+defaults to the author's homelab setup):
 
 ```bash
 sudo ~/.claude/skills/hermes-debug/scripts/hermes-triage.sh

@@ -2,7 +2,7 @@
 name: hermes-deploy-guard
 description: >-
   The deployment invariant and recovery procedure for a Hermes editable install
-  where the checked-out git branch IS the running code (CT 133 pattern). Use this
+  where the checked-out git branch IS the running code (editable-install pattern). Use this
   skill WHENEVER restarting, updating, or doing dev work near the live Hermes
   tree, when the gateway won't stop/status correctly after a dashboard restart, or
   when verifying the install hasn't drifted off the `integrated` branch. Encodes
@@ -13,7 +13,7 @@ description: >-
 
 A Hermes **editable install** has no build step: **the checked-out git branch is
 the running code.** This skill is the invariant that keeps that safe and the exact
-recovery when it breaks. (Background: `hermes-internals` → "CT 133 deployment
+recovery when it breaks. (Background: `hermes-internals` → "Homelab deployment
 realities".)
 
 ## The invariant

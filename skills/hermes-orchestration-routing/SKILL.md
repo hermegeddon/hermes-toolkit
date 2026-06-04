@@ -9,7 +9,7 @@ description: >-
   structured goal and a verification gate. Use this skill WHENEVER deciding
   "should I answer this directly, call one tool, or delegate?", when a simple ops
   query is burning many model calls / timing out, or when wiring routing rules
-  into SOUL.md / AGENTS.md. Verified on CT 133 against apex-fast (100% on the
+  into SOUL.md / AGENTS.md. Verified on the author's homelab build against apex-fast (100% on the
   direct-vs-delegate axis).
 ---
 
@@ -25,7 +25,7 @@ that should be one tool call becomes a 6–17 model-call delegation that wanders
 > **Reasoning / judgment / multi-step → `delegate_task`.**
 > Never delegate a status check. Never KB-search before a `service_status` call.
 
-This was measured on CT 133: simple ops ("is the gateway running?") routed
+This was measured on the author's homelab build: simple ops ("is the gateway running?") routed
 through `delegate_task` cost **6–17 model calls / 90–150s** and sometimes timed
 out; the correct path is a **single `cluster-ops.service_status` call** (~1–3
 model turns). On the slow local model (apex-fast on a P40) the cost of getting

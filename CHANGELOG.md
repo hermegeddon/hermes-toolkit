@@ -1,13 +1,13 @@
 # hermes-toolkit v2 — CHANGELOG
 
 All changes are relative to the original `hermes-toolkit` package, and fold in
-**verified, measured** findings from the CT 133 (`hermes`, 192.168.1.33) Hermes
-session (dated 2026-06-04). v2 was built entirely under `/tmp`; it does not touch
+**verified, measured** findings from a real Hermes install (the author's homelab,
+dated 2026-06-04). v2 was built entirely under `/tmp`; it does not touch
 the live `/opt/hermes` install or git.
 
 ---
 
-## A — Eval suites calibrated to the real CT 133 build
+## A — Eval suites calibrated to the real Hermes build
 
 **`skills/hermes-eval-harness/scripts/suites/smoke.yaml` (rewritten)**
 - Replaced placeholder ops assertion `tool_called: terminal` — `terminal` AND
@@ -23,11 +23,11 @@ the live `/opt/hermes` install or git.
   comment flagging that `skip_context_files=True` can break it.
 - Added `max_llm_calls` / `not_tool_called: delegate_task` guards on the ops and
   greeting cases (anti delegation-explosion).
-- Added CT 133 env defaults in the header (model `apex-fast:latest` via Ollama
-  `192.168.1.28:11434/v1`; gateway api `:8643`; `HERMES_HOME=/opt/hermes/home/.hermes`).
+- Added homelab env defaults in the header (model `apex-fast:latest` via Ollama
+  `<your-ollama-host>:11434/v1`; gateway api `:8643`; `HERMES_HOME=/opt/hermes/home/.hermes`).
 
 **`skills/hermes-eval-harness/scripts/suites/gateway.yaml` (rewritten)**
-- Base URL default changed to `http://localhost:8643/v1` (CT 133 gateway port).
+- Base URL default changed to `http://localhost:8643/v1` (homelab gateway port).
 - Weather case named to Woodstock IL (avoids identity-context dependency over the
   gateway).
 - Expanded the header to state that `max_llm_calls` / `tool_called` /
@@ -92,12 +92,12 @@ the live `/opt/hermes` install or git.
 ## E — `hermes-internals` enriched
 
 **`skills/hermes-internals/SKILL.md`**
-- Appended a "CT 133 deployment realities (verified 2026-06-04)" section
+- Appended a "homelab deployment realities (verified 2026-06-04)" section
   (existing content preserved). Covers: editable-install = running-branch (must be
   `integrated`, two prior outages from branch switches); the two drifting config
   files and which platform reads which; `terminal`/`code_execution` disabled →
   cluster-ops MCP for ops; weather MCP + Woodstock default + identity-context gap;
-  model/endpoints (`apex-fast:latest`, Ollama `192.168.1.28`, gateway `:8643`);
+  model/endpoints (`apex-fast:latest`, local Ollama host, gateway `:8643`);
   the `tool_search` deferral tradeoff on slow local models; warm-gateway-vs-cold-CLI
   latency and the P40 vLLM-vs-llama.cpp note; gateway PID/lock symlink recreation.
 
@@ -115,7 +115,7 @@ the live `/opt/hermes` install or git.
 
 ## Top-level / packaging
 
-- `README.md`: added a "v2 improvements (CT 133 calibration)" section summarizing
+- `README.md`: added a "v2 improvements (homelab calibration)" section summarizing
   A–F; updated the tree diagram, the goals table (added deploy-guard row), the
   "six specialists" count, and the caveats (point at the calibration assumptions).
 - Flat review-level mirrors kept in sync with their canonical sources:

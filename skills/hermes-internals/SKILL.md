@@ -145,10 +145,10 @@ bot token.
 > Verify version-specific details (exact CLI flags like `-Q`, message-dict keys,
 > tool names) against your installed build before relying on them in automation.
 
-## CT 133 deployment realities (verified 2026-06-04)
+## Homelab deployment realities (verified 2026-06-04, author's setup)
 
-Concrete, measured facts about the live CT 133 (`hermes`, 192.168.1.33) install.
-Treat these as ground truth for that box; re-verify before porting elsewhere.
+Concrete, measured facts about the author's live homelab install.
+Treat these as ground truth for that setup; re-verify before porting elsewhere.
 
 ### Editable install = the checked-out branch IS the running code
 Hermes runs as an **editable install** at
@@ -186,7 +186,7 @@ stripping context files (e.g. `skip_context_files=True`) can make the agent ask
 
 ### Model + endpoints
 Main model **`apex-fast:latest`** via `provider:custom` → Ollama
-`http://192.168.1.28:11434/v1`. Gateway HTTP API on **~port 8643**. TUI/CLI
+`http://<OLLAMA_HOST>:11434/v1` (substitute your Ollama host). Gateway HTTP API on **~port 8643**. TUI/CLI
 `HERMES_HOME=/opt/hermes/home/.hermes`. Measured routing compliance for
 apex-fast: **80% overall, 100% on the direct-vs-delegate axis** (the one that
 matters for the delegation-explosion anti-pattern).

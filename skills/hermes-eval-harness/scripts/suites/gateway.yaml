@@ -1,9 +1,9 @@
 # Gateway suite — exercises the REAL gateway path end-to-end via the
 # OpenAI-compatible api_server adapter (or `hermes serve`).
-# CALIBRATED to the CT 133 Hermes build (verified 2026-06-04).
+# CALIBRATED to the author's Hermes build (verified 2026-06-04).
 #
 # Start the endpoint first (see the hermes-internals skill for the api-server
-# docs). On CT 133 the gateway HTTP API listens on ~port 8643:
+# docs). The gateway HTTP API listens on ~port 8643 (substitute your host/port):
 #   python ../hermes_eval.py --suite gateway.yaml --backend api \
 #          --base-url http://localhost:8643/v1 --model apex-fast:latest
 #

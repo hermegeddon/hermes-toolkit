@@ -7,7 +7,7 @@ provider/profile misconfiguration, not a model outage. Work these in order.
 
 Each profile names a `provider` and a `model`. The provider must be a real,
 configured provider. On this setup: the main model is `apex-fast:latest` via
-`provider: custom` → Ollama at `http://192.168.1.28:11434/v1`; substitute your Ollama
+`provider: custom` → Ollama at `http://<OLLAMA_HOST>:11434/v1`; substitute your Ollama
 host. A profile that names a provider that does not exist (typo, removed provider)
 fails at routing time.
 

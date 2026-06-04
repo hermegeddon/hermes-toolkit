@@ -120,7 +120,7 @@ The `library` backend constructs `AIAgent` with `quiet_mode=True`, `skip_memory=
 
 ## Note on examples
 
-Examples and the bundled triage script default to the author's homelab setup (CT 133, internal IPs, an Ollama host, an `apex-fast` model, the `davidgut1982` fork). Substitute your own fork URL, host, paths, and model. The skills mark setup-specific values as "this setup", and `hermes-triage.sh` accepts `HERMES_*` environment variable overrides for every default path and branch name.
+Examples and the bundled triage script default to the author's homelab setup (a single LXC node, a local Ollama host, an `apex-fast` model, and a personal fork). Substitute your own fork URL, host, paths, and model. The skills mark setup-specific values as "this setup", and `hermes-triage.sh` accepts `HERMES_*` environment variable overrides for every default path and branch name.
 
 ---
 

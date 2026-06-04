@@ -15,7 +15,7 @@
 #       the wrong file.
 #
 # Everything is env-overridable so it works on any Hermes fork/host. The defaults are
-# the CT 133 (hermes) setup; substitute your own paths/branch via the env vars.
+# the author's homelab setup; substitute your own paths/branch via the env vars.
 #
 #   REPO         live editable checkout       (default /opt/hermes/home/.hermes/hermes-agent)
 #   EXPECTED     integration branch name      (default integrated)

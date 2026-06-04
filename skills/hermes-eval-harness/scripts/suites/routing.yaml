@@ -1,5 +1,5 @@
 # Routing-compliance suite — the suite that catches the DELEGATION-EXPLOSION
-# anti-pattern (verified on CT 133, 2026-06-04).
+# anti-pattern (verified on the author's homelab build, 2026-06-04).
 #
 # THE PROBLEM IT GUARDS: a simple, deterministic ops query ("is X running?")
 # was being routed through delegate_task, which spent 6-17 model calls over

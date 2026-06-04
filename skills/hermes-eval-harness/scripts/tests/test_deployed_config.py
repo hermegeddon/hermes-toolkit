@@ -33,7 +33,7 @@ def test_model_mapping_is_normalized(monkeypatch):
     _patch_loader(monkeypatch, {
         "model": {
             "default": "apex-fast:latest",
-            "base_url": "http://192.168.1.28:11434/v1",
+            "base_url": "http://ollama.example:11434/v1",
             "provider": "custom",
             "api_key": "none",          # literal "none" must be dropped
         },
@@ -42,7 +42,7 @@ def test_model_mapping_is_normalized(monkeypatch):
     })
     out = hermes_eval._resolve_deployed_config()
     assert out["model"] == "apex-fast:latest"
-    assert out["base_url"] == "http://192.168.1.28:11434/v1"
+    assert out["base_url"] == "http://ollama.example:11434/v1"
     assert out["provider"] == "custom"
     assert "api_key" not in out                       # "none" -> no key
     assert out["toolsets"] == ["hermes-cli", "mcp-ocr"]
@@ -94,7 +94,7 @@ def stub_agent(monkeypatch):
     # Fixed deployed config for all precedence cases.
     hermes_eval._DEPLOYED_CFG_CACHE["v"] = {
         "model": "apex-fast:latest",
-        "base_url": "http://192.168.1.28:11434/v1",
+        "base_url": "http://ollama.example:11434/v1",
         "provider": "custom",
         "toolsets": ["hermes-cli", "mcp-ocr"],
     }
@@ -121,7 +121,7 @@ def test_bare_run_adopts_deployed_model(stub_agent):
     hermes_eval.run_library("hi", _runtime())
     k = _StubAgent.last_kwargs
     assert k["model"] == "apex-fast:latest"
-    assert k["base_url"] == "http://192.168.1.28:11434/v1"
+    assert k["base_url"] == "http://ollama.example:11434/v1"
     assert k["provider"] == "custom"
     assert k["enabled_toolsets"] == ["hermes-cli", "mcp-ocr"]
     # speed knobs preserved regardless of deployed config
@@ -132,7 +132,7 @@ def test_explicit_model_wins(stub_agent):
     hermes_eval.run_library("hi", _runtime(model="qwen3:8b", model_is_default=False))
     assert _StubAgent.last_kwargs["model"] == "qwen3:8b"
     # but endpoint/provider still come from deployed config (no explicit override)
-    assert _StubAgent.last_kwargs["base_url"] == "http://192.168.1.28:11434/v1"
+    assert _StubAgent.last_kwargs["base_url"] == "http://ollama.example:11434/v1"
 
 
 def test_suite_defaults_model_wins(stub_agent):

@@ -1,13 +1,13 @@
 # Smoke suite — the fast equivalent of the "weather, ops, basic chat" QA pass,
-# CALIBRATED to the CT 133 Hermes build (verified 2026-06-04).
+# CALIBRATED to the author's Hermes build (verified 2026-06-04).
 #
 # Run in-process (fastest, gives tool-call + llm-call trajectory):
 #   python ../hermes_eval.py --suite smoke.yaml --backend library --workers 6
 #
-# CT 133 environment defaults (set these for your run):
+# Environment defaults (set these for your run):
 #   library backend (default): now loads the DEPLOYED config automatically
 #     (--use-deployed-config is ON by default), so it drives the real deployed model
-#     apex-fast:latest via provider:custom -> Ollama http://192.168.1.28:11434/v1.
+#     (e.g. apex-fast:latest via provider:custom -> Ollama http://<OLLAMA_HOST>:11434/v1).
 #     Just point HERMES_HOME at the deployed config and run:
 #       HERMES_HOME=/opt/hermes/home/.hermes \
 #         python ../hermes_eval.py --suite smoke.yaml --backend library --workers 6

@@ -2,7 +2,7 @@
 name: hermes-deploy-guard
 description: >-
   Verifies and maintains the integrity of a live Hermes editable-install
-  deployment (the CT 133 pattern: checked-out git branch IS the running code).
+  deployment (the editable-install pattern: checked-out git branch IS the running code).
   Use PROACTIVELY before/after any restart, update, or dev work on the live tree,
   and for "is the deploy healthy", "did we drift off the integrated branch",
   "the gateway won't stop/status", or "recover the install". MUST BE USED instead
@@ -16,7 +16,7 @@ You are the deployment-integrity guard for a Hermes **editable install**, where
 there is no build step — **the checked-out git branch is the running code.** Your
 job is to keep that invariant true and to verify the install is serving correctly.
 
-Load the `hermes-internals` skill (its "CT 133 deployment realities" section is
+Load the `hermes-internals` skill (its "Homelab deployment realities" section is
 your spec) and `hermes-eval-harness` (for the post-restart smoke).
 
 ## THE INVARIANT (never violate)

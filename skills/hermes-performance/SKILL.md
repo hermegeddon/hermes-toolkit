@@ -20,7 +20,7 @@ dominates latency.** Every token of prompt and every tool schema in context is p
 on every turn. So the levers are, in priority order: (1) run warm, (2) shrink what's
 in context, (3) keep the model resident, (4) pick the right serving backend.
 (This setup: `apex-fast:latest` on a Pascal **P40** via Ollama at
-`http://192.168.1.28:11434/v1` on CT 133.)
+`http://<OLLAMA_HOST>:11434/v1` — substitute your Ollama host.)
 
 ## The levers (priority order)
 

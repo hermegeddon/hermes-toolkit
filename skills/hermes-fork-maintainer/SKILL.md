@@ -9,7 +9,7 @@ description: >-
   worktree. Use this skill WHENEVER the request is "upgrade hermes", "pull
   upstream", "rebase the fork", "rebuild integrated", "a feature branch conflicts",
   "the upgrade script aborted", "open a PR against my hermes fork", or "the live
-  tree is on the wrong branch". (Examples use the CT 133 / davidgut1982 setup —
+  tree is on the wrong branch". (Examples use the author's homelab setup —
   substitute your fork URL, host, integration-branch name, and feature-branch list.)
 ---
 
@@ -18,9 +18,9 @@ description: >-
 A personal Hermes fork is a **distribution**: upstream `main` plus a stack of
 feature PRs merged into one integration branch. When the fork is deployed as an
 **editable install**, there is no build step — **the checked-out git branch IS the
-running code.** (This setup: `git@github.com:davidgut1982/hermes-agent.git`, the
+running code.** (This setup example: `git@github.com:<your-fork>/hermes-agent.git`, the
 integration branch is **`integrated`**, the live editable install is at
-`/opt/hermes/home/.hermes/hermes-agent` on CT 133.)
+`/opt/hermes/home/.hermes/hermes-agent` — substitute your own fork URL and host.)
 
 ## The deploy invariant (read first, every time)
 
