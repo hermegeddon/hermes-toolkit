@@ -1,0 +1,75 @@
+{
+  "summary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "latency_p50": 30.57,
+    "latency_p95": 30.57,
+    "latency_max": 30.57,
+    "by_category": {
+      "deployed": {
+        "pass": 2,
+        "total": 2,
+        "rate": 1.0
+      }
+    },
+    "wall_seconds": 30.6
+  },
+  "results": [
+    {
+      "id": "deployed-chat-arith",
+      "category": "deployed",
+      "ok": true,
+      "latency": 30.56696410290897,
+      "response": "4",
+      "tool_calls": [],
+      "llm_calls": 1,
+      "assertions": [
+        {
+          "type": "no_error",
+          "ok": true,
+          "detail": "error: None"
+        },
+        {
+          "type": "contains",
+          "ok": true,
+          "detail": "missing '4'"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "deployed-chat-hello",
+      "category": "deployed",
+      "ok": true,
+      "latency": 28.820290865842253,
+      "response": "pong",
+      "tool_calls": [],
+      "llm_calls": 1,
+      "assertions": [
+        {
+          "type": "no_error",
+          "ok": true,
+          "detail": "error: None"
+        },
+        {
+          "type": "nonempty",
+          "ok": true,
+          "detail": "ok"
+        },
+        {
+          "type": "contains",
+          "ok": true,
+          "detail": "missing 'pong'"
+        },
+        {
+          "type": "max_llm_calls",
+          "ok": true,
+          "detail": "1 llm calls > 2"
+        }
+      ],
+      "error": null
+    }
+  ]
+}
