@@ -97,6 +97,27 @@ weekly-rebase cadence, the `CHANGELOG.integrated.md` discipline, and the plugin
 escape hatch (ship behavior as a plugin/skill instead of a core patch when possible —
 fewer merge conflicts at upgrade time).
 
+## Reviewing a PR against the fork (governance-aware)
+
+Review the fork's open PRs against the **fork's own rules first**, then code quality.
+Review-only: comment, never `--approve` / `gh pr merge` (that is a human decision).
+
+1. **Governance first.** Read the repo's CAPITALIZED rule files at the PR's head and
+   check the PR against them, citing `file:line`:
+   - `CONTRIBUTING.md` (one-logical-change-per-PR, commit style, required tests),
+     `SECURITY.md`, `CODEOWNERS`, `.github/PULL_REQUEST_TEMPLATE.md` (is the body
+     actually filled in?), `AGENTS.md` / `SOUL.md` (behavior/routing contract),
+     `CHANGELOG.integrated.md`.
+   - State any missing rule files explicitly — absence is not compliance.
+2. **Then code quality:** correctness, security, error handling, performance, tests.
+3. **Output two sections:** rule violations (with governance `file:line` citations)
+   vs. quality suggestions, so a maintainer can tell a project-rule break from a
+   taste call.
+
+The highest-value finding is usually a governance break — e.g. a PR titled as one
+change that also bundles unrelated core edits violates `CONTRIBUTING.md`
+"one logical change per PR." Catch that before reviewing the diff line-by-line.
+
 ## Red flags / STOP
 
 - `branch --show-current` on the live tree is NOT `integrated` → STOP, restore it

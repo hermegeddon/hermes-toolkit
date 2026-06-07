@@ -358,6 +358,11 @@ def assert_one(a: dict[str, Any], res: CaseResult) -> tuple[bool, str]:
         flags = re.IGNORECASE if ci else 0
         return bool(re.search(a["pattern"], text, flags)), f"no match for /{a['pattern']}/"
 
+    if t == "not_regex":
+        flags = re.IGNORECASE if ci else 0
+        matched = re.search(a["pattern"], text, flags)
+        return not bool(matched), f"unexpectedly matched /{a['pattern']}/ at {matched.group(0)!r}" if matched else "ok"
+
     if t == "tool_called":
         want = a["tool"]
         return want in res.tool_calls, f"tool {want!r} not in {res.tool_calls or '[]'}"
@@ -419,7 +424,7 @@ def _judge(a: dict[str, Any], res: CaseResult) -> tuple[bool, str]:
 
             judge = _JUDGE_CACHE.get("agent")
             if judge is None:
-                judge = AIAgent(
+                judge_kwargs: dict[str, Any] = dict(
                     model=cfg.get("judge_model", cfg["model"]),
                     quiet_mode=True,
                     skip_memory=True,
@@ -427,11 +432,21 @@ def _judge(a: dict[str, Any], res: CaseResult) -> tuple[bool, str]:
                     disabled_toolsets=["terminal", "browser", "web"],
                     max_iterations=1,
                 )
+                # Pass explicit base_url/api_key to judge so it uses the same
+                # endpoint as the main agent (avoids falling through to the
+                # deployed config's fallback_providers which may use expired keys).
+                if cfg.get("base_url"):
+                    judge_kwargs["base_url"] = cfg["base_url"]
+                if cfg.get("api_key"):
+                    judge_kwargs["api_key"] = cfg["api_key"]
+                judge = AIAgent(**judge_kwargs)
                 _JUDGE_CACHE["agent"] = judge
             raw = judge.chat(prompt)
-            err = None
+            err = None if raw is not None else "judge.chat() returned None (model error or empty response)"
         if err:
             return False, f"judge error: {err}"
+        if raw is None:
+            return False, "judge returned None (model error or empty response)"
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         score = float(json.loads(m.group(0))["score"]) if m else 0.0
         return score >= threshold, f"judge score {score:.2f} (>= {threshold} required)"
@@ -655,8 +670,35 @@ def main() -> int:
     # concrete model, so fall back to the env/historic placeholder. model_is_default
     # records "the user did not pass --model", which run_library uses to prefer the
     # deployed model on a bare invocation.
+    #
+    # NOTE on the built-in fallback model: when neither --model nor HERMES_QA_MODEL is
+    # set, the harness silently falls back to a generic default. A weak default model is
+    # a SAFETY TRAP for safety-critical skills: a weak judge/model reads explicit
+    # POST-ONLY / auth-refusal rules and ignores them, producing FALSE "BLOCK" verdicts
+    # (this bit us in a real session — qwen/qwen3-32b sailed past explicit refusal rules).
+    # We do NOT hardcode a new paid default here — the existing default is preserved and
+    # we warn loudly (once, to stderr) so the caller knows they are on the bare fallback
+    # and must pass a representative runtime model for safety-critical skills.
+    _BUILTIN_FALLBACK_MODEL = "anthropic/claude-sonnet-4.6"
     model_is_default = args.model is None
-    model = args.model or os.environ.get("HERMES_QA_MODEL", "anthropic/claude-sonnet-4.6")
+    _env_model = os.environ.get("HERMES_QA_MODEL")
+    model = args.model or _env_model or _BUILTIN_FALLBACK_MODEL
+    if model_is_default and not _env_model:
+        # No explicit --model AND no HERMES_QA_MODEL: we are on the bare built-in
+        # fallback. Warn once, loudly, to stderr. (The library backend may still adopt
+        # the DEPLOYED model downstream — but api/cli backends and --bare runs use this
+        # value verbatim, so the trap is real for them. A weak default such as
+        # qwen/qwen3-32b silently passes safety-critical refusal/POST-ONLY/auth checks
+        # and yields false BLOCK verdicts.)
+        print(
+            f"[eval][WARN] No --model/HERMES_QA_MODEL set; defaulting to the built-in "
+            f"fallback {_BUILTIN_FALLBACK_MODEL}. A weak fallback model (e.g. "
+            f"qwen/qwen3-32b) is UNRELIABLE for safety-critical skills "
+            f"(refusal/POST-ONLY/auth rules) — it produces false BLOCK verdicts. Pass "
+            f"--model with a representative runtime model (e.g. the skill's production "
+            f"model, deepseek/deepseek-v4-flash, or a Sonnet-class control).",
+            file=sys.stderr,
+        )
 
     runtime = {
         "backend": args.backend,
@@ -696,6 +738,39 @@ def main() -> int:
     paths: list[str] = []
     for pat in args.suite:
         paths.extend(sorted(glob.glob(pat)) or [pat])
+
+    # Pre-eval tool deregistration: if any suite specifies `deregister_tools`,
+    # remove those tools from the global registry BEFORE any cases run.
+    # This is the safe, surgical mechanism to prevent write-capable tools
+    # (e.g. skill_manage) from contaminating skill files during eval runs.
+    # The deregistration is global and permanent for this process lifetime,
+    # which is the desired behavior — eval sessions must never mutate state.
+    #
+    # IMPORTANT: tool files (e.g. skill_manager_tool.py) are only imported
+    # when `run_agent.AIAgent` is first imported (lazy import inside run_library).
+    # We must force that import NOW — before the worker threads start — so the
+    # tools are actually registered in the registry before we try to deregister
+    # them. Without this, deregister() is a no-op and the tools get re-registered
+    # on the first run_library() call.
+    _tools_to_deregister: list[str] = []
+    for path in paths:
+        with open(path) as _fh:
+            _doc = yaml.safe_load(_fh)
+        _tools_to_deregister.extend(_doc.get("deregister_tools") or [])
+
+    if args.backend == "library" and _tools_to_deregister:
+        try:
+            # Force-import run_agent so all tool files are registered.
+            import run_agent as _run_agent_mod  # noqa: F401
+        except Exception as _exc:
+            print(f"[eval] WARNING: could not pre-import run_agent for deregistration: {_exc}")
+        for _tool_name in _tools_to_deregister:
+            try:
+                from tools.registry import registry as _registry
+                _registry.deregister(_tool_name)
+                print(f"[eval] deregistered tool '{_tool_name}' (anti-contamination)")
+            except Exception as _exc:
+                print(f"[eval] WARNING: could not deregister '{_tool_name}': {_exc}")
 
     all_results: list[CaseResult] = []
     overall_name = ", ".join(os.path.basename(p) for p in paths)

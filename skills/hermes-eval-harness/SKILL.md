@@ -108,6 +108,40 @@ python scripts/hermes_eval.py --suite scripts/suites/smoke.yaml --bare \
 the `api` and `cli` backends are unaffected by this flag (they use `--model`
 verbatim).
 
+## Choosing the eval model (important)
+
+The model you grade against is part of the test — pick it deliberately.
+
+- **The default is a generic fallback, not a guarantee.** When neither `--model`
+  nor `HERMES_QA_MODEL` is set, the harness falls back to a built-in default model.
+  A weak fallback (e.g. `qwen/qwen3-32b`) is cheap but **unreliable** as a judge. On
+  a bare run with no explicit model the harness now prints a `[eval][WARN]` to stderr
+  so you know you're on the fallback — do not ignore it for safety-critical work.
+- **Safety-critical skills MUST be eval'd against a representative runtime model.**
+  Skills that enforce refusals, POST-ONLY semantics, or auth rules are the ones a
+  weak model gets wrong: it reads the explicit refusal/POST-ONLY/auth rules in the
+  skill and ignores them, then a weak `judge` rubric scores the (wrong) behavior as
+  fine — yielding **false `BLOCK` / false-pass verdicts**. This cost real time in a
+  live session (`qwen/qwen3-32b` sailed straight past explicit refusal rules). If the
+  skill is safety-critical, never trust a weak default.
+- **What to pass instead.** Use the skill's actual production model, or a known-good
+  control: `deepseek/deepseek-v4-flash` (the Hermes delegation tier) or a
+  Sonnet-class model. For `library` runs the default `--use-deployed-config` already
+  mirrors the **deployed** model — prefer that over a hand-picked `--model`. For
+  `api`/`cli` runs, pass `--model` explicitly. Set `--judge-model` to a stronger
+  grader than the model under test when judging safety behavior.
+
+  ```bash
+  # safety-critical skill: grade against a representative model, not the fallback
+  python scripts/hermes_eval.py --suite scripts/suites/refusals.yaml \
+    --model deepseek/deepseek-v4-flash --judge-model anthropic/claude-sonnet-4.6
+  ```
+- **Companion safeguard.** This pairs with the run-time `deregister_tools`
+  contamination guard (e.g. deregistering `skill_manage`): even with a representative
+  model, eval runs must never mutate skill files. Representative model + tool
+  deregistration together keep safety-critical evals both *correct* and *side-effect
+  free*.
+
 ## Suite schema (YAML)
 
 ```yaml

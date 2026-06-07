@@ -159,6 +159,29 @@ delegation). **Two prior outages** were caused by an agent `git checkout`-ing a
 feature branch on the live tree. Do dev work in a `git worktree` or under
 `hermes -p dev`, never by switching branches on the live checkout.
 
+### The DEV tree is ONE shared working tree — branch switches orphan work
+The dev sandbox at `/opt/hermes/dev/hermes-agent` is a **single shared git working
+tree**, not a per-task clone. Any branch-switching operation in it — `gh pr
+checkout`, `git checkout`, `git switch`, a rebase — **silently switches the whole
+tree** and orphans whatever was checked out, including uncommitted edits and a
+concurrent agent's in-flight feature branch. **This bit us twice in one session:**
+an agent ran `gh pr checkout` mid-task and switched the dev tree off the feature
+branch another task was actively working on, losing context and time. The dev tree
+has the same "checked-out branch IS the running code" property as the stable tree
+(which is pinned to `integrated`) — the only difference is the dev tree is *meant*
+to move, so it has no branch invariant to protect it.
+
+**Mitigations:**
+- Use `git worktree add <path> <branch>` for branch-specific work instead of
+  switching the live dev tree. Each task/agent gets its own worktree directory.
+- **Pin parallel agents to their own worktrees** — never let two agents share one
+  working tree.
+- **Commit or stash before any `checkout`/`gh pr checkout`** so a switch can't eat
+  uncommitted edits.
+- **Never assume the dev tree is still on the branch you left it on.** Run
+  `git -C /opt/hermes/dev/hermes-agent branch --show-current` before acting; another
+  agent or command may have moved it.
+
 ### Two config files that drift (fixes must hit BOTH)
 | File | Read by |
 |---|---|
