@@ -33,6 +33,9 @@ you specifically want the end-to-end gateway path. Run cases in parallel.
 3. **Run**: `python scripts/hermes_eval.py --suite <files> --backend library
    --workers 6 --out report.json --md report.md`. (For a true serving-path check,
    add a second `api`-backend run against the gateway endpoint.)
+   **Windows + WSL**: the `library` backend requires WSL — use the launcher
+   `hermes_eval_wsl.cmd` instead, or switch to `--backend api` (requires
+   `hermes serve` running in WSL; see `WINDOWS_WSL.md`).
 4. **Report**: give the user per-category pass rates, p50/p95/max latency, total
    wall time, and an itemized failure list. Lead with what's broken and what's slow.
 5. **Track regressions**: re-run with `--baseline <previous report.json>` after any

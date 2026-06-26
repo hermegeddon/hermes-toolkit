@@ -42,6 +42,9 @@ your spec) and `hermes-eval-harness` (for the post-restart smoke).
    `python <skills>/hermes-eval-harness/scripts/hermes_eval.py
    --suite suites/smoke.yaml --backend library --workers 4`. A green weather +
    chat result is your "serving" proof.
+   **Windows + WSL**: use `hermes_eval_wsl.cmd` for the library backend, or
+   `--backend api` with the gateway endpoint. All recovery shell commands in
+   this agent must be run inside WSL (e.g. via `wsl bash` or a WSL terminal).
 
 ## Recovery sequence (only when branch drift or a broken install is confirmed)
 ```bash

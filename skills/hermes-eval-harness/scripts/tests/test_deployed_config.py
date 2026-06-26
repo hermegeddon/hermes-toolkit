@@ -88,6 +88,8 @@ class _StubAgent:
 
 @pytest.fixture
 def stub_agent(monkeypatch):
+    if sys.platform == "win32":
+        pytest.skip("run_library is WSL-only on this machine; run via hermes_eval_wsl.cmd")
     # run_library does `from run_agent import AIAgent`; patch that symbol.
     import run_agent
     monkeypatch.setattr(run_agent, "AIAgent", _StubAgent, raising=True)

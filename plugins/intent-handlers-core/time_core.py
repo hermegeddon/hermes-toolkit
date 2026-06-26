@@ -122,8 +122,8 @@ def answer_time(text: Optional[str] = None) -> str:
     now = _now()
     weekday = now.strftime("%A")
     iso_date = now.strftime("%Y-%m-%d")
-    pretty_date = now.strftime("%B %-d, %Y") if hasattr(now, "strftime") else iso_date
-    clock = now.strftime("%-I:%M %p").lstrip("0")
+    pretty_date = f"{now.strftime('%B')} {now.day}, {now.year}"
+    clock = now.strftime("%I:%M %p").lstrip("0")
     tzname = now.strftime("%Z") or TIMEZONE
     kind = _kind(text or "")
 

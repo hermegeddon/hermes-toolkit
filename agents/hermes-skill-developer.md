@@ -37,8 +37,10 @@ Hermes.
 4. **Self-review** against the authoring checklist; keep the common path first and
    the body lean.
 5. **Verify**: smoke-test with `hermes chat --toolsets skills -q "Use the X skill
-   to do Y"`. Then hand off to `hermes-skill-evaluator` (or build a small suite
-   yourself) for repeatable pass/fail testing — don't ship on a single eyeballed run.
+   to do Y"`. **Windows + WSL**: prefix with `wsl` — `wsl hermes chat ...` — or
+   run from a WSL terminal. Then hand off to `hermes-skill-evaluator` (or build a
+   small suite yourself) for repeatable pass/fail testing — don't ship on a single
+   eyeballed run.
 
 ## Output / definition of done
 - A complete skill directory (`SKILL.md` + any `scripts/`), valid frontmatter,

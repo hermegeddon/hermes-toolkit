@@ -61,6 +61,22 @@ except ImportError:  # pragma: no cover
     raise
 
 
+def _force_utf8_stdio() -> None:
+    """Make stdout/stderr tolerate the report glyphs (✓/✗/🐢/→) on Windows.
+
+    WHY: the default Windows console encoding is cp1252, which can't encode those
+    characters — `print_console`/`write_markdown` would raise UnicodeEncodeError
+    (and crash) the moment a run has a failure to report. Reconfiguring to UTF-8
+    with errors='replace' keeps the glyphs on capable terminals and degrades
+    gracefully (to '?') on legacy ones instead of taking the whole run down.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # py3.7+
+        except (AttributeError, ValueError):  # already-wrapped or unsupported
+            pass
+
+
 # --------------------------------------------------------------------------- #
 # Data model
 # --------------------------------------------------------------------------- #
@@ -205,6 +221,12 @@ def _deployed_config() -> dict[str, Any]:
 
 
 def run_library(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], int, str | None]:
+    if sys.platform == "win32":
+        return "", [], 0, (
+            "library backend is unavailable on Windows: Hermes Python packages live in WSL. "
+            "Run via the WSL launcher (hermes_eval_wsl.cmd) or switch to --backend api. "
+            "See WINDOWS_WSL.md."
+        )
     from run_agent import AIAgent  # imported lazily so api/cli modes need no install
 
     # Deployed config is the BASE; explicit per-case / CLI values layer on top so a
@@ -293,6 +315,10 @@ def run_cli(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], int, str 
     """The slow baseline. Here for comparison only."""
     binary = cfg.get("hermes_bin", "hermes")
     cmd = [binary, "chat", "-Q", "-q", prompt]
+    if sys.platform == "win32":
+        distro = cfg.get("wsl_distro") or os.environ.get("HERMES_WSL_DISTRO")
+        wsl_prefix = ["wsl", "-d", distro] if distro else ["wsl"]
+        cmd = wsl_prefix + cmd
     if cfg.get("toolsets"):
         cmd += ["--toolsets", ",".join(cfg["toolsets"])]
     env = dict(os.environ)
@@ -458,7 +484,7 @@ def _judge(a: dict[str, Any], res: CaseResult) -> tuple[bool, str]:
 # Suite loading + execution
 # --------------------------------------------------------------------------- #
 def load_suite(path: str) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
-    with open(path) as fh:
+    with open(path, encoding="utf-8") as fh:
         doc = yaml.safe_load(fh)
     name = doc.get("suite", os.path.basename(path))
     defaults = doc.get("defaults", {})
@@ -553,7 +579,7 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
 
 
 def diff_baseline(cur: list[CaseResult], baseline_path: str) -> dict[str, Any]:
-    with open(baseline_path) as fh:
+    with open(baseline_path, encoding="utf-8") as fh:
         base = {r["id"]: r for r in json.load(fh)["results"]}
     regressions, fixes, slower = [], [], []
     for r in cur:
@@ -618,7 +644,7 @@ def write_markdown(path: str, name: str, summary: dict, results: list[CaseResult
             lines.append(f"- ⚠ `{rid}` newly failing")
         for s in delta["slower"]:
             lines.append(f"- 🐢 `{s['id']}` {s['was']}s → {s['now']}s")
-    with open(path, "w") as fh:
+    with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
 
 
@@ -626,6 +652,7 @@ def write_markdown(path: str, name: str, summary: dict, results: list[CaseResult
 # CLI
 # --------------------------------------------------------------------------- #
 def main() -> int:
+    _force_utf8_stdio()  # keep report glyphs from crashing a cp1252 Windows console
     p = argparse.ArgumentParser(description="Fast parallel QA harness for Hermes Agent")
     p.add_argument("--suite", nargs="+", required=True, help="One or more suite YAML files (globs OK)")
     p.add_argument("--backend", choices=list(BACKENDS), default="library")
@@ -643,6 +670,9 @@ def main() -> int:
     p.add_argument("--api-key", default=os.environ.get("HERMES_QA_API_KEY"))
     p.add_argument("--hermes-bin", default="hermes", help="For cli backend")
     p.add_argument("--hermes-home", default=os.environ.get("HERMES_HOME"), help="For cli backend")
+    p.add_argument("--wsl-distro", default=os.environ.get("HERMES_WSL_DISTRO"),
+                   help="WSL distro to target for cli backend on Windows (e.g. Ubuntu). "
+                        "Env: HERMES_WSL_DISTRO. Omit to use the default WSL distro.")
     p.add_argument("--baseline", default=None, help="Previous report.json to diff against")
     p.add_argument("--out", default=None, help="Write full JSON report here")
     p.add_argument("--md", default=None, help="Write a Markdown summary here")
@@ -715,6 +745,7 @@ def main() -> int:
         "api_key": args.api_key,
         "hermes_bin": args.hermes_bin,
         "hermes_home": args.hermes_home,
+        "wsl_distro": args.wsl_distro,
     }
     _JUDGE_CACHE["cfg"] = runtime
 
@@ -754,7 +785,7 @@ def main() -> int:
     # on the first run_library() call.
     _tools_to_deregister: list[str] = []
     for path in paths:
-        with open(path) as _fh:
+        with open(path, encoding="utf-8") as _fh:
             _doc = yaml.safe_load(_fh)
         _tools_to_deregister.extend(_doc.get("deregister_tools") or [])
 
@@ -791,7 +822,7 @@ def main() -> int:
 
     report = {"summary": summary, "results": [asdict(r) for r in all_results]}
     if args.out:
-        with open(args.out, "w") as fh:
+        with open(args.out, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=2)
         print(f"wrote {args.out}")
     if args.md:
