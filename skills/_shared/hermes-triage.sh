@@ -33,6 +33,9 @@
 # Override example (proves parameterization):
 #   sudo REPO=/srv/myfork EXPECTED=release /path/to/hermes-triage.sh
 #
+# Windows + WSL: run this script inside WSL, not from a Windows shell:
+#   wsl bash /mnt/c/.../skills/hermes-debug/scripts/hermes-triage.sh
+#
 set -uo pipefail
 
 REPO="${HERMES_REPO:-${REPO:-/opt/hermes/home/.hermes/hermes-agent}}"
