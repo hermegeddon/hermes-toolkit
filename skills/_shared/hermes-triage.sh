@@ -34,7 +34,7 @@
 #   sudo REPO=/srv/myfork EXPECTED=release /path/to/hermes-triage.sh
 #
 # Windows + WSL: run this script inside WSL, not from a Windows shell:
-#   wsl bash /mnt/c/.../skills/hermes-debug/scripts/hermes-triage.sh
+#   wsl bash /mnt/c/.../skills/<skill>/scripts/hermes-triage.sh
 #
 set -uo pipefail
 
