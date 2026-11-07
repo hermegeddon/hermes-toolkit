@@ -1,0 +1,134 @@
+suite: hermes-acumatica-postmortem-regressions
+defaults:
+  max_iterations: 6
+  timeout: 90
+  toolsets: [skills]
+cases:
+  - id: windows-bridge-routing
+    category: windows-exec
+    metadata:
+      source: postmortem-analysis-20260820 weak-point-1
+      mutation: none
+    prompt: >-
+      Load acumatica-windows-exec. Explain the blessed way to run a read-only
+      PowerShell inventory command on an Acumatica Windows host, including the
+      result fields and how CLIXML is handled. Do not connect to a host.
+    assert:
+      - {type: tool_called, tool: skill_view}
+      - {type: contains_all, values: [ps_run, stdout, stderr, exit_code, clixml_stripped]}
+      - {type: max_llm_calls, n: 4}
+
+  - id: screen-inspection-routing
+    category: screen-automation
+    metadata:
+      source: postmortem-analysis-20260820 weak-point-2
+      mutation: none
+    prompt: >-
+      Load acumatica-screen-automation. Give the first two methods, in order,
+      for checking whether an Acumatica field is present and readable. Explain
+      the wait strategy and JSON return-shape rule. Do not open a browser.
+    assert:
+      - {type: tool_called, tool: skill_view}
+      - {type: contains_all, values: [__agentPx, px_alls, DOM, plain]}
+      - {type: max_llm_calls, n: 4}
+
+  - id: acu-publish-set-semantics
+    category: acu-semantics
+    metadata:
+      source: mitigation-recommendations-20260820 P1-b
+      mutation: none
+    prompt: >-
+      Load acucustomizationutil-semantics. A shared instance currently has
+      projects A, B, and C published, and C must be removed. Describe the safe
+      operation, the forbidden operation, the source-layout preflight, and the
+      locale setting. Do not invoke acu.
+    assert:
+      - {type: tool_called, tool: skill_view}
+      - {type: contains_all, values: [remaining set, unpublish, AssemblyInfo.cs, DOTNET_CLI_UI_LANGUAGE]}
+      - {type: max_llm_calls, n: 4}
+
+  - id: verification-ladder-selection
+    category: verification
+    metadata:
+      source: mitigation-recommendations-20260820 P3
+      mutation: none
+    prompt: >-
+      Load acumatica-verification-ladders. List the preferred-first methods and
+      stop conditions for element presence, publish state, schema-column
+      presence, and DLL identity. Do not inspect a live environment.
+    assert:
+      - {type: tool_called, tool: skill_view}
+      - {type: contains_all, values: [element, publish, schema, DLL, stop]}
+      - {type: max_llm_calls, n: 4}
+
+  - id: acu-client-auth-parity
+    category: acu-semantics
+    metadata:
+      source: deployment-arc-20260822 publish-auth-incident
+      mutation: none
+    prompt: >-
+      Load acucustomizationutil-semantics. An acu pkg upload succeeded, but a
+      later acu pkg publish with the same credential material failed as
+      unauthorized under an Anonymous client authentication scheme. Explain the
+      likely cause, the environment variable that makes client selection
+      deterministic, the credential representation each client expects, and the
+      bounded read-only step required before minting fresh publish authority.
+      Do not invoke acu and do not suggest changing the password.
+    assert:
+      - {type: tool_called, tool: skill_view}
+      - {type: contains_all, values: [GLOBALIZATION_INVARIANT, REST, SOAP, tenant, parity]}
+      - {type: max_llm_calls, n: 4}
+
+  - id: acu-completion-markers
+    category: acu-semantics
+    metadata:
+      source: deployment-arc-20260822 marker-adjudication
+      mutation: none
+    prompt: >-
+      Load acucustomizationutil-semantics. A probe harness reported an acu pkg
+      get invocation as failed, but the sanitized native log ends with the get
+      completion line and the package passed integrity checks. Explain what the
+      per-command completion markers are, what most likely went wrong in the
+      harness, and what the correct adjudication procedure is. State explicitly
+      whether ACU should be rerun.
+    assert:
+      - {type: tool_called, tool: skill_view}
+      - {type: contains_all, values: [GetPackage action complete, chevron, rerun]}
+      - {type: max_llm_calls, n: 4}
+
+  - id: business-action-uat-ladder
+    category: verification
+    metadata:
+      source: deployment-arc-20260822 headset-uat
+      mutation: none
+    prompt: >-
+      Load acumatica-verification-ladders. After deploying a customization fix,
+      describe how to prove that creating a document for a specific stock item
+      works end to end, including what must be checked before the attempt for
+      items with segmented keys, how the persisted result is verified, how
+      cleanup is bounded, and what to do when the cleanup delete is rejected by
+      aggregate validation. Do not touch a live environment.
+    assert:
+      - {type: tool_called, tool: skill_view}
+      - {type: contains_all, values: [preflight, segment, readback, reconciliation, residual]}
+      - {type: max_llm_calls, n: 4}
+
+  - id: instance-wedge-vs-acu-fault
+    category: acu-semantics
+    metadata:
+      source: fork-parity-probe-20260823 wedged-app-pool incident
+      mutation: none
+    prompt: >-
+      Load acucustomizationutil-semantics. An acu pkg get against a dev
+      instance failed with a TaskCanceledException citing the HttpClient
+      timeout of 100 seconds elapsing, yet the native exit code was 0 and the
+      sanitized log ends with the get completion line. A colleague concludes
+      the credentials are wrong and wants to rotate them. Explain what
+      actually happened, the first measurement to take and from where, how to
+      tell a wedged app pool from a slow warmup, the remedy for each, and why
+      the exit code and completion line prove nothing here. Do not touch a
+      live environment and do not suggest changing credentials.
+    assert:
+      - {type: tool_called, tool: skill_view}
+      - {type: contains_all, values: [timeout, pool, login page, exit]}
+      - {type: max_llm_calls, n: 4}

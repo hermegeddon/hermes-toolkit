@@ -44,14 +44,17 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures as cf
+import contextlib
 import glob
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field, asdict
+from pathlib import Path
 from typing import Any, Callable
 
 try:
@@ -88,6 +91,7 @@ class CaseResult:
     latency: float
     response: str
     tool_calls: list[str] = field(default_factory=list)
+    tool_call_details: list[dict[str, Any]] = field(default_factory=list)
     llm_calls: int = 0  # assistant turns in the trajectory (anti delegation-explosion metric)
     assertions: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
@@ -120,6 +124,52 @@ def _extract_tool_names(messages: list[dict[str, Any]]) -> list[str]:
         if m.get("tool_name"):
             names.append(m["tool_name"])
     return names
+
+
+def _extract_tool_calls(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Extract assistant tool names plus normalized call arguments.
+
+    Argument-aware assertions deliberately inspect the request emitted by the
+    model, not the later tool-result message. OpenAI-shaped trajectories encode
+    ``function.arguments`` as JSON text; a few providers already return a dict,
+    so both forms are accepted. Malformed/non-object arguments are retained as
+    ``raw_arguments`` rather than silently discarded.
+    """
+    calls: list[dict[str, Any]] = []
+    for message in messages or []:
+        if not isinstance(message, dict):
+            continue
+        for raw_call in message.get("tool_calls") or []:
+            if not isinstance(raw_call, dict):
+                continue
+            function = raw_call.get("function") or {}
+            if not isinstance(function, dict) or not function.get("name"):
+                continue
+            raw_arguments = function.get("arguments", {})
+            arguments: Any = raw_arguments
+            if isinstance(raw_arguments, str):
+                try:
+                    arguments = json.loads(raw_arguments)
+                except (TypeError, ValueError):
+                    calls.append(
+                        {
+                            "tool": function["name"],
+                            "arguments": {},
+                            "raw_arguments": raw_arguments,
+                        }
+                    )
+                    continue
+            if not isinstance(arguments, dict):
+                calls.append(
+                    {
+                        "tool": function["name"],
+                        "arguments": {},
+                        "raw_arguments": raw_arguments,
+                    }
+                )
+                continue
+            calls.append({"tool": function["name"], "arguments": arguments})
+    return calls
 
 
 def _count_llm_calls(messages: list[dict[str, Any]]) -> int:
@@ -220,9 +270,9 @@ def _deployed_config() -> dict[str, Any]:
     return _DEPLOYED_CFG_CACHE["v"]
 
 
-def run_library(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], int, str | None]:
+def run_library(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], list[dict[str, Any]], int, str | None]:
     if sys.platform == "win32":
-        return "", [], 0, (
+        return "", [], [], 0, (
             "library backend is unavailable on Windows: Hermes Python packages live in WSL. "
             "Run via the WSL launcher (hermes_eval_wsl.cmd) or switch to --backend api. "
             "See WINDOWS_WSL.md."
@@ -283,12 +333,12 @@ def run_library(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], int, 
         text = result.get("final_response", "") or ""
         msgs = result.get("messages", [])
         tools = _extract_tool_names(msgs)
-        return text, tools, _count_llm_calls(msgs), None
+        return text, tools, _extract_tool_calls(msgs), _count_llm_calls(msgs), None
     except Exception as exc:  # noqa: BLE001 — surface any failure as a test error
-        return "", [], 0, f"{type(exc).__name__}: {exc}"
+        return "", [], [], 0, f"{type(exc).__name__}: {exc}"
 
 
-def run_api(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], int, str | None]:
+def run_api(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], list[dict[str, Any]], int, str | None]:
     import urllib.request
 
     url = cfg["base_url"].rstrip("/") + "/chat/completions"
@@ -306,12 +356,12 @@ def run_api(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], int, str 
         # OpenAI-compatible final response: no reliable intermediate tool list,
         # and no trajectory, so llm_calls is unknown (0). max_llm_calls /
         # not_tool_called are library-backend assertions — see SKILL.md.
-        return text, [], 0, None
+        return text, [], [], 0, None
     except Exception as exc:  # noqa: BLE001
-        return "", [], 0, f"{type(exc).__name__}: {exc}"
+        return "", [], [], 0, f"{type(exc).__name__}: {exc}"
 
 
-def run_cli(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], int, str | None]:
+def run_cli(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], list[dict[str, Any]], int, str | None]:
     """The slow baseline. Here for comparison only."""
     binary = cfg.get("hermes_bin", "hermes")
     cmd = [binary, "chat", "-Q", "-q", prompt]
@@ -329,15 +379,15 @@ def run_cli(prompt: str, cfg: dict[str, Any]) -> tuple[str, list[str], int, str 
             cmd, capture_output=True, text=True, timeout=cfg.get("timeout", 120), env=env
         )
         if out.returncode != 0:
-            return out.stdout, [], 0, f"exit {out.returncode}: {out.stderr.strip()[:300]}"
-        return out.stdout.strip(), [], 0, None
+            return out.stdout, [], [], 0, f"exit {out.returncode}: {out.stderr.strip()[:300]}"
+        return out.stdout.strip(), [], [], 0, None
     except subprocess.TimeoutExpired:
-        return "", [], 0, "timeout"
+        return "", [], [], 0, "timeout"
     except Exception as exc:  # noqa: BLE001
-        return "", [], 0, f"{type(exc).__name__}: {exc}"
+        return "", [], [], 0, f"{type(exc).__name__}: {exc}"
 
 
-BACKENDS: dict[str, Callable[..., tuple[str, list[str], int, str | None]]] = {
+BACKENDS: dict[str, Callable[..., tuple[str, list[str], list[dict[str, Any]], int, str | None]]] = {
     "library": run_library,
     "api": run_api,
     "cli": run_cli,
@@ -400,6 +450,19 @@ def assert_one(a: dict[str, Any], res: CaseResult) -> tuple[bool, str]:
         deny = a["tool"]
         return deny not in res.tool_calls, f"tool {deny!r} was called (got {res.tool_calls or '[]'})"
 
+    if t == "tool_call_matches":
+        want = a["tool"]
+        pattern = a["arg_regex"]
+        flags = re.IGNORECASE if ci else 0
+        candidates = [call for call in res.tool_call_details if call.get("tool") == want]
+        for call in candidates:
+            encoded = json.dumps(call.get("arguments", {}), sort_keys=True, ensure_ascii=False)
+            if re.search(pattern, encoded, flags):
+                return True, "ok"
+        if not candidates:
+            return False, f"tool {want!r} had no argument-bearing call in trajectory"
+        return False, f"tool {want!r} called, but no arguments matched /{pattern}/"
+
     if t == "max_tool_calls":
         # Cap TOTAL tool invocations. Catches tool-loop thrash distinct from
         # model-turn count. Library backend only.
@@ -444,7 +507,9 @@ def _judge(a: dict[str, Any], res: CaseResult) -> tuple[bool, str]:
     )
     try:
         if cfg["backend"] == "api":
-            raw, _, _, err = run_api(prompt, {**cfg, "model": cfg.get("judge_model", cfg["model"])})
+            raw, _, _, _, err = run_api(
+                prompt, {**cfg, "model": cfg.get("judge_model", cfg["model"])}
+            )
         else:
             from run_agent import AIAgent
 
@@ -495,11 +560,100 @@ def load_suite(path: str) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
     return name, cases, defaults
 
 
+def _prepare_kanban_fixtures(
+    cases: list[dict[str, Any]], fixture_root: Path
+) -> list[dict[str, Any]]:
+    """Create one disposable board card/workspace per fixture-enabled case.
+
+    The resulting private ``_env`` is applied only while that case runs. Because
+    environment variables are process-global, ``run_all`` serializes suites that
+    contain these fixtures. This is a faithful worker surface: real Kanban tool
+    schemas and handlers operate on a disposable SQLite board, never the live one.
+    """
+    from hermes_cli import kanban_db as kb
+
+    fixture_root = Path(fixture_root)
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    db_path = fixture_root / "kanban.db"
+    kb.init_db(db_path)
+    prepared: list[dict[str, Any]] = []
+    conn = kb.connect(db_path)
+    try:
+        for raw_case in cases:
+            case = dict(raw_case)
+            fixture = case.get("kanban_fixture")
+            if fixture is None or fixture is False:
+                prepared.append(case)
+                continue
+            fixture = fixture if isinstance(fixture, dict) else {}
+            workspace = fixture_root / "workspaces" / case.get("id", "case")
+            workspace.mkdir(parents=True, exist_ok=True)
+            for relative, content in (fixture.get("files") or {}).items():
+                target = (workspace / relative).resolve()
+                if not target.is_relative_to(workspace.resolve()):
+                    raise ValueError(f"kanban fixture file escapes workspace: {relative!r}")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(str(content), encoding="utf-8")
+            task_id = kb.create_task(
+                conn,
+                title=f"eval fixture: {case.get('id', 'case')}",
+                body=case.get("prompt", ""),
+                assignee="eval-worker",
+                created_by="hermes-eval-harness",
+                workspace_kind="dir",
+                workspace_path=str(workspace),
+                initial_status="running",
+            )
+            claimed = kb.claim_task(
+                conn,
+                task_id,
+                claimer=f"hermes-eval:{case.get('id', 'case')}",
+                board="eval-fixture",
+            )
+            if claimed is None:
+                raise RuntimeError(f"failed to claim disposable Kanban fixture {task_id}")
+            case["prompt"] = case["prompt"].format(
+                kanban_task_id=task_id,
+                workspace=str(workspace),
+            )
+            case["_env"] = {
+                "HERMES_KANBAN_TASK": task_id,
+                "HERMES_KANBAN_DB": str(db_path),
+                "HERMES_KANBAN_BOARD": "eval-fixture",
+                "HERMES_KANBAN_WORKSPACE": str(workspace),
+                # Use the fixture claim rather than inheriting the harness worker's
+                # dispatcher identity. Lifecycle mutations pin to this run id.
+                "HERMES_KANBAN_RUN_ID": str(claimed.current_run_id),
+                "HERMES_KANBAN_CLAIM_LOCK": str(claimed.claim_lock),
+                "HERMES_PROFILE": "eval-worker",
+                "TERMINAL_CWD": str(workspace),
+            }
+            prepared.append(case)
+    finally:
+        conn.close()
+    return prepared
+
+
+@contextlib.contextmanager
+def _temporary_env(overrides: dict[str, str]):
+    previous = {key: os.environ.get(key) for key in overrides}
+    os.environ.update(overrides)
+    try:
+        yield
+    finally:
+        for key, old_value in previous.items():
+            if old_value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = old_value
+
+
 def run_case(case: dict[str, Any], runtime: dict[str, Any]) -> CaseResult:
     cfg = {**runtime, **case}
     backend = BACKENDS[runtime["backend"]]
     t0 = time.perf_counter()
-    text, tools, llm_calls, err = backend(case["prompt"], cfg)
+    with _temporary_env(case.get("_env", {})):
+        text, tools, tool_details, llm_calls, err = backend(case["prompt"], cfg)
     latency = time.perf_counter() - t0
 
     res = CaseResult(
@@ -509,6 +663,7 @@ def run_case(case: dict[str, Any], runtime: dict[str, Any]) -> CaseResult:
         latency=latency,
         response=text,
         tool_calls=tools,
+        tool_call_details=tool_details,
         llm_calls=llm_calls,
         error=err,
     )
@@ -523,7 +678,7 @@ def run_case(case: dict[str, Any], runtime: dict[str, Any]) -> CaseResult:
 
 def run_all(cases: list[dict[str, Any]], runtime: dict[str, Any]) -> list[CaseResult]:
     results: list[CaseResult] = []
-    workers = runtime["workers"]
+    workers = 1 if any(case.get("_env") for case in cases) else runtime["workers"]
     timeout = runtime.get("timeout", 120)
     with cf.ThreadPoolExecutor(max_workers=workers) as ex:
         futs = {ex.submit(run_case, c, runtime): c for c in cases}
@@ -713,7 +868,20 @@ def main() -> int:
     model_is_default = args.model is None
     _env_model = os.environ.get("HERMES_QA_MODEL")
     model = args.model or _env_model or _BUILTIN_FALLBACK_MODEL
-    if model_is_default and not _env_model:
+    # On a bare LIBRARY run with deployed-config mirroring ON, the deployed model is
+    # adopted downstream — the fallback WARN would be misleading, so resolve the
+    # deployed config first (cached) and emit an INFO instead when it has a model.
+    _dep_early: dict[str, Any] = {}
+    if args.backend == "library" and args.use_deployed_config:
+        _dep_early = _deployed_config()
+    if model_is_default and not _env_model and _dep_early.get("model"):
+        print(
+            f"[eval] bare run: adopting DEPLOYED model {_dep_early['model']} "
+            f"(mirrored from HERMES_HOME={os.environ.get('HERMES_HOME') or '(unset)'} "
+            f"config; pass --model to override).",
+            file=sys.stderr, flush=True,
+        )
+    elif model_is_default and not _env_model:
         # No explicit --model AND no HERMES_QA_MODEL: we are on the bare built-in
         # fallback. Warn once, loudly, to stderr. (The library backend may still adopt
         # the DEPLOYED model downstream — but api/cli backends and --bare runs use this
@@ -742,7 +910,12 @@ def main() -> int:
         "workers": args.workers,
         "timeout": args.timeout,
         "base_url": args.base_url,
-        "api_key": args.api_key,
+        # api backend: fall back to the API server's key env vars so callers that
+        # export API_SERVER_KEY (e.g. the hermes_toolkit MCP) work without --api-key.
+        "api_key": args.api_key or (
+            (os.environ.get("API_SERVER_KEY") or os.environ.get("HERMES_API_KEY"))
+            if args.backend == "api" else None
+        ),
         "hermes_bin": args.hermes_bin,
         "hermes_home": args.hermes_home,
         "wsl_distro": args.wsl_distro,
@@ -752,6 +925,11 @@ def main() -> int:
     # One-line provenance so before/after is visible in the output: show what the
     # library backend will actually drive AIAgent with. (Library backend only; the
     # api/cli backends use runtime["model"] verbatim.)
+    # NOTE: these diagnostics go to STDERR with flush=True on purpose. Hermes
+    # quiet_mode hijacks sys.stdout when the first AIAgent is constructed, and
+    # anything sitting unflushed in the stdout buffer at that moment is silently
+    # DISCARDED (this made the provenance line invisible on real runs).
+    eff_model = model
     if args.backend == "library":
         if args.use_deployed_config:
             _dep = _deployed_config()
@@ -759,12 +937,21 @@ def main() -> int:
             src = "deployed config" if (model_is_default and _dep.get("model")) else "--model"
             print(f"[library] effective model: {eff_model}  (from {src})"
                   f"  endpoint={args.base_url or _dep.get('base_url') or '(agent default)'}"
-                  f"  HERMES_HOME={os.environ.get('HERMES_HOME') or '(unset)'}")
+                  f"  HERMES_HOME={os.environ.get('HERMES_HOME') or '(unset)'}",
+                  file=sys.stderr, flush=True)
             if not _dep:
                 print("[library] note: no deployed config resolved (loader/config "
-                      "unavailable) — falling back to --model default.")
+                      "unavailable) — falling back to --model default.",
+                      file=sys.stderr, flush=True)
         else:
-            print(f"[library] effective model: {model}  (--bare: deployed config NOT loaded)")
+            print(f"[library] effective model: {model}  (--bare: deployed config NOT loaded)",
+                  file=sys.stderr, flush=True)
+
+    # An omitted --judge-model follows the model actually under test. Without
+    # this post-resolution assignment, a deployed-config run adopts its deployed
+    # model for cases but leaves the judge on the generic fallback placeholder.
+    if args.judge_model is None:
+        runtime["judge_model"] = eff_model
 
     paths: list[str] = []
     for pat in args.suite:
@@ -806,8 +993,12 @@ def main() -> int:
     all_results: list[CaseResult] = []
     overall_name = ", ".join(os.path.basename(p) for p in paths)
     wall0 = time.perf_counter()
+    fixture_tmp = tempfile.TemporaryDirectory(prefix="hermes-eval-kanban-")
     for path in paths:
         name, cases, _ = load_suite(path)
+        if any(case.get("kanban_fixture") is not None for case in cases):
+            fixture_dir = Path(fixture_tmp.name) / re.sub(r"[^A-Za-z0-9_.-]", "-", name)
+            cases = _prepare_kanban_fixtures(cases, fixture_dir)
         results = run_all(cases, runtime)
         summary = summarize(results)
         delta = diff_baseline(results, args.baseline) if args.baseline else None
@@ -817,6 +1008,10 @@ def main() -> int:
 
     summary = summarize(all_results)
     summary["wall_seconds"] = round(wall, 1)
+    # Auditability: record what the run was actually graded against.
+    summary["effective_model"] = eff_model
+    summary["backend"] = args.backend
+    summary["use_deployed_config"] = bool(args.use_deployed_config)
     print(f"TOTAL: {summary['passed']}/{summary['total']} passed in {wall:.1f}s wall "
           f"({args.workers} workers, {args.backend} backend)")
 
@@ -828,6 +1023,8 @@ def main() -> int:
     if args.md:
         write_markdown(args.md, overall_name, summary, all_results, None)
         print(f"wrote {args.md}")
+
+    fixture_tmp.cleanup()
 
     # Non-zero exit if anything failed — handy in CI / pre-deploy gates.
     return 0 if summary["failed"] == 0 else 1

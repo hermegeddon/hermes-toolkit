@@ -1,11 +1,11 @@
 # smoke-deployed — minimal 2-case suite that proves the `library` backend now drives
-# the DEPLOYED agent (apex-fast:latest via provider:custom -> Ollama) rather than a
+# the DEPLOYED agent (gpt-5.5 via provider openai-codex) rather than a
 # bare-default AIAgent. Pairs with the --use-deployed-config default (see SKILL.md).
 #
-#   HERMES_HOME=/opt/hermes/home/.hermes \
+#   HERMES_HOME=/home/openclaw/.hermes \
 #     python ../hermes_eval.py --suite smoke-deployed.yaml --backend library --workers 2
 #
-# The harness prints a `[library] effective model: apex-fast:latest (from deployed
+# The harness prints a `[library] effective model: gpt-5.5 (from deployed
 # config) ...` line at startup; these cases additionally exercise a real round-trip so
 # a wrong/nonexistent model (the pre-fix Sonnet-on-Ollama mismatch) surfaces as an
 # error instead of a silent green.

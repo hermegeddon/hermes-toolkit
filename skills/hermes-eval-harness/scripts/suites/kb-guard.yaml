@@ -1,0 +1,39 @@
+# kb-guard — regression guard for the library-index `kb` MCP server (re-wired
+# 2026-07-27 after the undocumented 2026-07-19 mcp_servers sweep silently
+# orphaned it; see kb-index-rewire-and-corpus-extension-plan-2026-07-27.md in
+# the planning folder, and HERMES.md §MCP).
+#
+# WHY ITS OWN SUITE: the smoke suite's library backend builds a bare AIAgent
+# that does NOT initialize config mcp_servers at all (verified 2026-07-27 —
+# zero MCP spawn lines in the eval process), so a kb assertion there is
+# permanently red. This suite uses the cli backend: a real `hermes chat`
+# session with full MCP init. Slow (~3 min/case) — run it when validating
+# config sweeps, MCP changes, or the kb index itself, not on every QA pass.
+#
+# Run:
+#   HERMES_HOME=/home/openclaw/.hermes \
+#     /home/openclaw/.hermes/hermes-agent/venv/bin/python3 ../hermes_eval.py \
+#     --suite suites/kb-guard.yaml --backend cli --workers 1
+#
+# Calibration (live trajectory 2026-07-27, session 20260727_062425_29c9e1):
+# tool names surface PREFIXED as mcp__kb__kb_search / mcp__kb__kb_read and are
+# discovered via tool_search (native tiered disclosure defers them). The cli
+# backend exposes no trajectory, so assertions below are text-level: the
+# KB_TOOL_MISSING contract in the prompt turns "tool absent" into an assertable
+# string. If this case fails with KB_TOOL_MISSING, check config.yaml
+# mcp_servers.kb FIRST.
+suite: kb-guard
+
+defaults:
+  max_iterations: 8
+  timeout: 300
+
+cases:
+  - id: kb-retrieval-live
+    category: retrieval
+    prompt: "Call the kb_search tool (discover it via tool search if it is not directly visible) with query 'dreamer pass-b adjudication routing' and k=3, then reply with the top result's path field verbatim and the index_built_at value kb_search reported. If you genuinely cannot find any kb_search tool after checking tool search, reply exactly: KB_TOOL_MISSING"
+    assert:
+      - { type: no_error }
+      - { type: not_contains, value: "KB_TOOL_MISSING" }
+      - { type: regex, pattern: "\\.md" }
+      - { type: regex, pattern: "20\\d\\d-\\d\\d-\\d\\d" }

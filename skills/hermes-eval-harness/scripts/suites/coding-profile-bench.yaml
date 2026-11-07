@@ -1,0 +1,61 @@
+# coding_profile_bench suite — micro tasks B1-B4 from
+# benchmarks/coding_profile_bench/ (plan: coding-profile-update-plan-2026-07-29).
+#
+# PRE-STEP (required for b1/b2/b4 — fixtures are consumed by the run):
+#   /home/openclaw/dev/hermes-stuff/benchmarks/coding_profile_bench/fixtures/seed_all.sh /home/openclaw/tmp/cpb-work
+#
+# Backend: use `cli` (real sessions; the profiler needs session files + lcm rows).
+#   HERMES_HOME=/home/openclaw/.hermes python3 ../hermes_eval.py \
+#     --suite coding-profile-bench.yaml --backend cli --workers 1
+# Workers=1: b1/b2/b4 mutate their fixture dirs; keep runs serialized.
+#
+# SCORING: harness assertions below are coarse pass/fail only. The real
+# metrics (prefix tokens, tools used/declared, suite invocations, rollovers)
+# come from running scripts/session_chain_profiler.py on each produced
+# session id — see benchmarks/coding_profile_bench/README.md.
+suite: coding-profile-bench
+
+defaults:
+  max_iterations: 60
+  timeout: 1800
+
+cases:
+  - id: b3-localization-qa
+    category: localization
+    prompt: |
+      Answer the following questions about the repository at /home/openclaw/.hermes/hermes-agent. READ-ONLY: do not modify anything, do not commit, do not run tests; just answer with file paths (and detail where asked). Answer all five, numbered.
+      1. Which file defines the function get_process_start_time(pid)?
+      2. Which module implements the active-session lease (class ActiveSessionLease and its release logic)?
+      3. Which file defines the semantics of the kanban run outcome value gave_up (the dispatcher/DB layer that records it)?
+      4. Which module under agent/ implements the context compressor compress() entry point used for session context compression?
+      5. Where is load_config_readonly() defined, and name two modules outside hermes_cli/config.py that call it.
+    assert:
+      - { type: no_error }
+      - { type: contains, value: "gateway/status.py" }
+      - { type: contains, value: "active_sessions.py" }
+      - { type: contains, value: "kanban_db.py" }
+      # Q4/Q5 scored via b3_localization_qa.json any-of groups (profiler-side).
+
+  - id: b1-focused-test-fix
+    category: coding
+    prompt: |
+      In /home/openclaw/tmp/cpb-work/b1 there are failing tests. Fix the underlying bug in the code (not the tests) and verify your fix using ./run_tests.sh. Work only inside that directory.
+    assert:
+      - { type: no_error }
+      - { type: judge, rubric: "The agent fixed rolling_mean's off-by-one range bug in statsbox/calc.py (not the tests) and reports the previously failing tests now pass.", threshold: 0.7 }
+
+  - id: b4-flake-triage
+    category: coding
+    prompt: |
+      CI reports intermittent test failures in /home/openclaw/tmp/cpb-work/b4. Diagnose the instability and make the suite reliable for landing, using ./run_tests.sh. Work only inside that directory.
+    assert:
+      - { type: no_error }
+      - { type: judge, rubric: "The agent identified tests/test_jitter_timing.py as genuinely flaky (nondeterministic os.urandom jitter vs a too-tight bound) and either quarantined it with a reason or fixed the nondeterminism/bound coherently, without looping many reruns.", threshold: 0.7 }
+
+  - id: b2-merge-conflict-mini
+    category: coding
+    prompt: |
+      In the git repository /home/openclaw/tmp/cpb-work/b2, merge branch feature/upstream-sync into main, preserving both sides intended behavior. Resolve any conflicts, verify with ./run_tests.sh, and commit the merge. Work only inside that directory.
+    assert:
+      - { type: no_error }
+      - { type: judge, rubric: "The merge commit exists on main; format_row supports BOTH width and align parameters; both test_width and test_right_align tests are present and passing.", threshold: 0.7 }
